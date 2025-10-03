@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Monero Multisig
+Comment=Monero Multisig Wallet Application
+Exec=appmonero-multisig-gui
+Icon=monero-multisig
+Terminal=false
+Type=Application
+Categories=Office;Finance;Network;
+MimeType=application/x-monero-multisig;
+StartupWMClass=appmonero-multisig-gui
