@@ -91,16 +91,16 @@
 
 
         
-        .video-container {
-    margin-top: 1rem;
-    width: 100%;
-}
+		.video-container {
+	    margin-top: 1rem;
+	    width: 100%;
+	}
 
-.video-container video {
-    width: 100%;
-    height: auto;
-    border-radius: 5px;
-}
+	.video-container iframe {
+	  width: 100%;
+	  aspect-ratio: 16 / 9;   /* or: height: 315px; */
+	  border-radius: 5px;
+	}
 
         .slideshow {
             position: relative;
@@ -193,6 +193,18 @@
         footer a:hover {
             text-decoration: underline;
         }
+        
+                .monero-address {
+            word-break: break-all;
+            font-family: monospace;
+            font-size: 0.9rem;
+            line-height: 1.8;
+            background: #f5f5f5;
+            padding: 0.5rem;
+            border-radius: 5px;
+            margin: 0.5rem 0;
+        }
+
 
         @media (max-width: 768px) {
             header h1 {
@@ -227,17 +239,16 @@
         </section>
 
         <!-- Video Tutorial Section -->
-        <section id="video">
-            <h2>Video Tutorial</h2>
-            <p>Watch a complete demonstration of how to use Monero Multisig GUI.</p>
-            <div class="video-container">
-                <video controls style="width: 100%; height: 100%; border-radius: 5px;">
-                    <source src="videos/tutorial.mp4" type="video/mp4">
-                    Your browser does not support the video tag.
-                </video>
-            </div>
-        </section>
-        
+	<div class="video-container">
+	  <iframe
+	    src="https://www.youtube-nocookie.com/embed/oCS5bVj0Feo"
+	    title="Monero Multisig GUI – demo"
+	    frameborder="0"
+	    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+	    allowfullscreen
+	  ></iframe>
+	</div>
+		
 
         <!-- About Section -->
         <section id="about">
@@ -252,8 +263,8 @@
     <footer>
         <p>View the source code on <a href="https://github.com/freigeist-m/monero-multisig-gui">GitHub</a></p>
         <p style="margin-top: 0.5rem;">Made with ❤️ for the Monero community</p>
-        <p>Support:<p/>
-        <p>85pvPfsGkFNXPNXX8ZjizHgojtL2BXuYJSXSMNzN4SWsfMf5ZZTGyTD4UxHZviZmPTMYebYHMWUUxP3WdE4bo8tdBgbsBGM</p>
+        <p>Support:</p>
+        <p class="monero-address">85pvPfsGkFNXPNXX8ZjizHgojtL2BXuYJSXSMNzN4SWsfMf5ZZTGyTD4UxHZviZmPTMYebYHMWUUxP3WdE4bo8tdBgbsBGM</p>
         <p> <img src="./images/logo.svg" alt="Monero Multisig GUI Logo" class="logo"> </p>
 
         
