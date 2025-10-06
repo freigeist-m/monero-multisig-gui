@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monero Multisig GUI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+
+        header {
+            background: linear-gradient(135deg, #5A92C4 0%, #7FB3D5 100%);
+            color: white;
+            padding: 3rem 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .logo {
+            width: 50px;
+            height: 50px;
+            margin-top: 1rem;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0;
+        }
+
+        header p {
+            font-size: 1.2rem;
+            opacity: 0.95;
+            margin-top: 1rem;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        section {
+            background: white;
+            margin: 2rem 0;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        h2 {
+            color: #4A8BC4;
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #4A8BC4;
+        }
+
+        .download-btn {
+            display: inline-block;
+            background: #4A8BC4;
+            color: white;
+            padding: 1rem 2rem;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            transition: background 0.3s;
+            margin-top: 1rem;
+        }
+
+        .download-btn:hover {
+            background: #6BA3D4;
+        }
+
+
+        
+        .video-container {
+    margin-top: 1rem;
+    width: 100%;
+}
+
+.video-container video {
+    width: 100%;
+    height: auto;
+    border-radius: 5px;
+}
+
+        .slideshow {
+            position: relative;
+            max-width: 100%;
+            margin: 1.5rem auto;
+        }
+
+        .slides {
+            position: relative;
+            width: 100%;
+            overflow: hidden;
+            border-radius: 5px;
+            background: #f9f9f9;
+            min-height: 400px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .slide {
+            display: none;
+            width: 100%;
+            text-align: center;
+        }
+
+        .slide.active {
+            display: block;
+        }
+
+        .slide img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 5px;
+        }
+
+        .slide-caption {
+            margin-top: 1rem;
+            font-size: 1rem;
+            color: #666;
+            padding: 0 1rem;
+        }
+
+        .slide-controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .slide-btn {
+            background: #4A8BC4;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background 0.3s;
+        }
+
+        .slide-btn:hover {
+            background: #6BA3D4;
+        }
+
+        .slide-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .slide-counter {
+            font-size: 1rem;
+            color: #666;
+            min-width: 80px;
+            text-align: center;
+        }
+
+        footer {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+            margin-top: 2rem;
+        }
+
+        footer a {
+            color: #4A8BC4;
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 2rem;
+            }
+            
+            .container {
+                padding: 1rem;
+            }
+
+            section {
+                padding: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <h1>Monero Multisig GUI</h1>
+
+        </div>
+        <p>A user-friendly interface for Monero multisignature wallets</p>
+    </header>
+
+    <div class="container">
+        <!-- Download Section -->
+        <section id="download">
+            <h2>Download</h2>
+            <p>Get the latest version of Monero Multisig GUI for your platform.</p>
+            <a href="https://github.com/freigeist-m/monero-multisig-gui/releases/latest" class="download-btn">Download Latest Release</a>
+        </section>
+
+        <!-- Video Tutorial Section -->
+        <section id="video">
+            <h2>Video Tutorial</h2>
+            <p>Watch a complete demonstration of how to use Monero Multisig GUI.</p>
+            <div class="video-container">
+                <video controls style="width: 100%; height: 100%; border-radius: 5px;">
+                    <source src="videos/tutorial.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+        </section>
+        
+
+        <!-- About Section -->
+        <section id="about">
+            <h2>About</h2>
+            <p>Monero Multisig GUI is a user-friendly graphical interface designed to simplify the process of creating and managing Monero multisignature wallets. With multisig, multiple parties must approve transactions, providing enhanced security for shared funds.</p>
+            <p style="margin-top: 1rem;">This tool makes multisig accessible to users who prefer a visual interface over command-line tools.</p>
+        </section>
+        
+
+    </div>
+
+    <footer>
+        <p>View the source code on <a href="https://github.com/freigeist-m/monero-multisig-gui">GitHub</a></p>
+        <p style="margin-top: 0.5rem;">Made with ❤️ for the Monero community</p>
+        <p>Support:<p/>
+        <p>85pvPfsGkFNXPNXX8ZjizHgojtL2BXuYJSXSMNzN4SWsfMf5ZZTGyTD4UxHZviZmPTMYebYHMWUUxP3WdE4bo8tdBgbsBGM</p>
+        <p> <img src="./images/logo.svg" alt="Monero Multisig GUI Logo" class="logo"> </p>
+
+        
+    </footer>
+
+</body>
+</html>
