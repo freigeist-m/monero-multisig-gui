@@ -141,6 +141,20 @@ Rectangle {
                 Layout.fillWidth: true
             }
 
+
+
+
+            AppNavButton  {
+                visible: accountManager.networkType === "testnet" || accountManager.networkType === "stagenet"
+                text: qsTr("%1 mode").arg(accountManager.networkType)
+                iconSource: "/resources/icons/flag.svg"
+                variant: "primary"
+                textAlignment: "center"
+                Layout.fillWidth: true
+                Layout.margins: 4
+
+            }
+
             AppNavButton  {
                 text: themeManager.darkMode ? "Light Mode" : "Dark Mode"
                 iconSource: themeManager.darkMode ? "/resources/icons/sun.svg" : "/resources/icons/moon.svg"

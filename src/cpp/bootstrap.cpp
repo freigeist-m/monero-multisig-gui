@@ -32,7 +32,7 @@ QVariantMap Bootstrap::buildCore(QCoreApplication *app)
     auto *accountManager  = new AccountManager(app);
     auto *torBackend      = new TorBackend(accountManager);
     auto *walletManager   = new MultiWalletController(accountManager, torBackend , app);
-    auto *multisigManager = new MultisigManager(walletManager, torBackend , app);
+    auto *multisigManager = new MultisigManager(walletManager, torBackend ,accountManager, app);
 
     walletManager->setProperty("accountManager", QVariant::fromValue(static_cast<QObject*>(accountManager)));
 

@@ -102,6 +102,8 @@ void AccountManager::loadSettingsFromJson(const QJsonObject &obj)
     m_torDaemon       = isOnionAddress(m_daemonUrl);
     m_lockTimeoutMinutes = s.value("lock_timeout_minutes").toInt(30);
     if (m_torDaemon) m_useTorForDaemon = true;
+    m_networkType = s.value("network_type").toString("mainnet");
+
 
 }
 
@@ -474,7 +476,8 @@ bool AccountManager::createAccount(const QString &accountName,
                              {"use_tor_for_daemon", false},
                              {"dark_mode",     true},
                              {"tor_autoconnect", false},
-                             {"lock_timeout_minutes", 30}
+                             {"lock_timeout_minutes", 30},
+                             {"network_type",  "mainnet"}
                          }}
         };
         m_accountData.swap(data);
@@ -1339,11 +1342,12 @@ bool AccountManager::updateSettings(bool inspectGuard,
                                     int daemonPort,
                                     bool useTorForDaemon,
                                     bool torAutoConnect,
-                                    int  lockTimeoutMinutes)
+                                    int  lockTimeoutMinutes,
+                                    const QString &networkTypeStr)
 {
     bool ok = false;
     bool disconnectWallets =  false;
-
+    QString newNetNormalized;
     {
         QMutexLocker locker(&m_mutex);
         if (!m_isAuthenticated) return false;
@@ -1355,6 +1359,13 @@ bool AccountManager::updateSettings(bool inspectGuard,
             emit errorOccurred(tr("Auto-lock minutes must be between 0 and 1440"));
             return false;
         }
+
+
+        if (networkTypeStr != m_networkType) {
+            disconnectWallets = true;
+
+        }
+
 
 
         bool isOnion = isOnionAddress(url);
@@ -1369,6 +1380,8 @@ bool AccountManager::updateSettings(bool inspectGuard,
         settings["use_tor_for_daemon"] = useTorForDaemon;
         settings["tor_autoconnect"]    = torAutoConnect;
         settings["lock_timeout_minutes"]    = lockTimeoutMinutes;
+        settings["network_type"]        = networkTypeStr;
+
         m_accountData["settings"]      = settings;
 
         if (!persistUnlocked())  return false;
@@ -1380,11 +1393,14 @@ bool AccountManager::updateSettings(bool inspectGuard,
         m_torDaemon       = isOnion;
         m_torAutoconnect  = torAutoConnect;
         m_lockTimeoutMinutes  = lockTimeoutMinutes;
+        m_networkType = networkTypeStr;
 
         ok = true;
     }
 
-    if (disconnectWallets) emit settingsChanged();
+    if (disconnectWallets) emit requireDisconnectAllWallets();
+
+    emit settingsChanged();
     return ok;
 }
 

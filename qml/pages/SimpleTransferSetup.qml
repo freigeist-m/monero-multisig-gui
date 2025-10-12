@@ -36,11 +36,40 @@ Page {
     }
 
     function _validAddress(s) {
-        if (typeof s !== "string") return false
-        const cleaned = s.replace(/\s+/g,"")
-        const base58 = "[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]"
-        const re = new RegExp("^(?:4" + base58 + "{94}|8" + base58 + "{94}|4" + base58 + "{105})$")
-        return re.test(cleaned)
+        if (typeof s !== "string") return false;
+
+        const a = s.replace(/\s+/g, "");
+        const B58 = "[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]";
+
+        // normalize network from AccountManager (fallback to mainnet)
+        const net = (accountManager.networkType || "mainnet").toLowerCase();
+
+        // prefixes per network
+        let stdPrefix, subPrefix, intPrefix;
+        switch (net) {
+        case "testnet":
+            stdPrefix = "[9]";  // standard
+            subPrefix = "[B]";   // subaddress
+            intPrefix = "[A]";  // integrated
+            break;
+        case "stagenet":
+            stdPrefix = "[5]";
+            subPrefix = "[7]";
+            intPrefix = "[5]";
+            break;
+        default: // mainnet
+            stdPrefix = "[4]";
+            subPrefix = "[8]";
+            intPrefix = "[4]";
+            break;
+        }
+
+        // 95 chars for standard/subaddress, 106 for integrated
+        const re = new RegExp(
+            `^(?:${stdPrefix}${B58}{94}|${subPrefix}${B58}{94}|${intPrefix}${B58}{105})$`
+        );
+
+        return re.test(a);
     }
 
     function _sumDest() {

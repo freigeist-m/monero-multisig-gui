@@ -31,6 +31,7 @@ public:
                               const QStringList     &notifyPeers,
                               const QString         &myOnion,
                               bool                   isStandaloneNotifier = false,
+                              const QString         &nettype =  "mainnet",
                               QObject               *parent=nullptr);
 
 
@@ -88,6 +89,7 @@ private:
     int          m_m{0};
     int          m_n{0};
     QStringList  m_allPeers;
+    QString      m_nettype;
 
     bool m_isStandaloneNotifier{false};
 

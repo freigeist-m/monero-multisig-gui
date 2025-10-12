@@ -77,6 +77,7 @@ MultisigNotifier::MultisigNotifier(MultiWalletController *wm,
                                    const QStringList     &notifyPeers,
                                    const QString         &myOnion,
                                    bool                   isStandaloneNotifier,
+                                   const QString         &nettype,
                                    QObject               *parent)
     : QObject(parent)
     , m_wm(wm)
@@ -86,6 +87,7 @@ MultisigNotifier::MultisigNotifier(MultiWalletController *wm,
     , m_n(n)
     , m_allPeers(allPeers)
     , m_isStandaloneNotifier(isStandaloneNotifier)
+    , m_nettype(nettype)
 {
     Q_ASSERT(wm && tor);
 
@@ -271,6 +273,7 @@ void MultisigNotifier::retryRound()
             { "ref",   m_ref },
             { "m",     m_m   },
             { "n",     m_n   },
+            { "net_type",     m_nettype   },
             { "peers", QJsonArray::fromStringList(m_allPeers) }
         };
 

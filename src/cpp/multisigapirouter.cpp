@@ -347,6 +347,7 @@ bool MultisigApiRouter::handlePing(const QByteArray &method,const QByteArray &ra
         { QStringLiteral("ref"),   s->referenceCode() },
         { QStringLiteral("m"),     s->m() },
         { QStringLiteral("n"),     s->n() },
+        { QStringLiteral("nettype"), s->net_type() },
         { QStringLiteral("stage"), MultisigSession::stageName(s->currentStage()) }
     };
 
@@ -462,9 +463,16 @@ bool MultisigApiRouter::handleNew(const QByteArray &method,const QByteArray &raw
     const QString ref = obj.value("ref").toString();
     const int m = obj.value("m").toInt(0);
     const int n = obj.value("n").toInt(0);
+    const QString net_type = obj.value("net_type").toString("mainnet");
     const QJsonArray peersArr = obj.value("peers").toArray();
     QStringList peers; for (const auto &v : peersArr) peers << v.toString();
 
+    const QString my_net_type =  m_acct->networkType();
+
+    if (net_type !=  my_net_type){
+        sendPlain(sock, 404, "Not found");
+        return true;
+    }
 
 
 
@@ -475,6 +483,7 @@ bool MultisigApiRouter::handleNew(const QByteArray &method,const QByteArray &raw
         sendPlain(sock, 404, "Not found"); return true;
     }
 
+
     const QByteArray pub = b64urlDecodeNoPad(xpub);
     const QByteArray sig = b64urlDecodeNoPad(xsig);
     bool okTs = false; const qint64 ts = QString::fromUtf8(xts).toLongLong(&okTs);
@@ -482,6 +491,7 @@ bool MultisigApiRouter::handleNew(const QByteArray &method,const QByteArray &raw
     if (qAbs(QDateTime::currentSecsSinceEpoch() - ts) > 60) {
         sendPlain(sock, 404, "Not found"); return true;
     }
+
     if (pub.size()!=32) { sendPlain(sock, 404, "Not found"); return true; }
 
     QUrl u(QString::fromUtf8(rawPath));
@@ -497,11 +507,11 @@ bool MultisigApiRouter::handleNew(const QByteArray &method,const QByteArray &raw
         {"ts",   ts},
         {"body", QString::fromLatin1(bodyHash)}
     };
+
     const QByteArray compact = QJsonDocument(msg).toJson(QJsonDocument::Compact);
     if (!verifyDetached(compact, sig, pub)) {
         sendPlain(sock, 404, "Not found"); return true;
     }
-
     if (!seenPostAndRemember(pub, canon, bodyHash)) {
 
         sendJson(sock,200,QJsonObject{{"ok",true},{"idempotent",true}});
@@ -529,7 +539,6 @@ bool MultisigApiRouter::handleNew(const QByteArray &method,const QByteArray &raw
     }
 
 
-
     QJsonObject entry;
     if (!senderIsOurs) {
         QJsonObject trusted = QJsonDocument::fromJson(m_acct->getTrustedPeers().toUtf8()).object();
@@ -541,13 +550,16 @@ bool MultisigApiRouter::handleNew(const QByteArray &method,const QByteArray &raw
         const int  minT   = entry.value("min_threshold").toInt(1);
         const int maxWallets = entry.value("max_number_wallets").toInt(0);
         const int curWallets = entry.value("current_number_wallets").toInt(0);
+
         if (!active) { sendPlain(sock, 404, "Not found"); return true; }
         if (m < minT) { sendPlain(sock, 404, "Not found"); return true; }
         if (n > maxN) { sendPlain(sock, 404, "Not found"); return true; }
         if (maxWallets > 0 && curWallets >= maxWallets) { sendPlain(sock, 404, "Not found");  return true; }
 
 
+
     }
+
 
     QStringList peersLower; peersLower.reserve(peers.size());
     for (const QString &p : peers) peersLower << norm(p);
@@ -562,7 +574,6 @@ bool MultisigApiRouter::handleNew(const QByteArray &method,const QByteArray &raw
         if (ourOnions.contains(p))
             matches << p;
 
-
     if (matches.isEmpty() || matches.size() > 1) {
         sendPlain(sock, 404, "Not found"); return true;
     }
@@ -574,7 +585,6 @@ bool MultisigApiRouter::handleNew(const QByteArray &method,const QByteArray &raw
         return true;
     }
 
-
     if (m_boundOnion.isEmpty()) {
             sendPlain(sock, 503, "Service warming up");
         return true;
@@ -583,7 +593,6 @@ bool MultisigApiRouter::handleNew(const QByteArray &method,const QByteArray &raw
         sendPlain(sock, 404, "Not found");
         return true;
     }
-
 
     if (!senderIsOurs) {
         const QJsonArray allowedArr = entry.value("allowed_identities").toArray();
@@ -595,7 +604,6 @@ bool MultisigApiRouter::handleNew(const QByteArray &method,const QByteArray &raw
             sendPlain(sock, 404, "Not found"); return true;
         }
     }
-
     if (m_mgr->sessionFor(m_boundOnion, ref)) { sendJson(sock,200,QJsonObject{{"ok",true}}); return true; }
 
     QStringList filtered;
@@ -610,11 +618,10 @@ bool MultisigApiRouter::handleNew(const QByteArray &method,const QByteArray &raw
         }
     }
 
-
     const QString walletName = QStringLiteral("wallet_for_ref_%1").arg(ref);
     const QString walletPass = randomPassword(20);
     m_mgr->startMultisig(ref, m, n, filtered, walletName, walletPass, myOnion, senderOnion);
-
+    // qDebug() << "[Router] newquested new";
     sendJson(sock,201,QJsonObject{{"ok",true}});
     return true;
 }

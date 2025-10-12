@@ -74,13 +74,13 @@ public:
     Q_INVOKABLE void describeTransfer(const QString &multisigTxset,QString operation_caller);
 
     Q_INVOKABLE void restoreFromSeed(const QString &path,
-                                                    const QString &password,
-                                                    const QString &seedWords,
-                                                    quint64        restoreHeight = 0,
-                                                    const QString &language      = {},
-                                                    bool           testnet       = false,
-                                                    quint64        kdfRounds     = 1,
-                                                    bool           isMultisg    = false);
+                                     const QString &password,
+                                     const QString &seedWords,
+                                     quint64        restoreHeight = 0,
+                                     const QString &language      = {},
+                                     const QString &nettype      = "mainnet",
+                                     quint64        kdfRounds     = 1,
+                                     bool           isMultisg    = false);
     Q_INVOKABLE void getPrimarySeed();
     Q_INVOKABLE void refreshHasMultisigPartialKeyImages();
 
@@ -113,12 +113,12 @@ public slots:
     void createNew(const QString &path,
                    const QString &password,
                    const QString &language = "English",
-                   bool          testnet   = false,
+                   const QString &nettype   = "mainnet",
                    quint64       kdfRounds = 1);
 
     void open      (const QString &path,
               const QString &password,
-              bool          testnet   = false,
+              const QString &nettype   = "mainnet",
               quint64       kdfRounds = 1);
 
     void close();

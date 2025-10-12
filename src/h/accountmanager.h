@@ -30,6 +30,7 @@ class AccountManager : public QObject
     Q_PROPERTY(bool    tor_daemon            READ torDaemon         NOTIFY settingsChanged)
     Q_PROPERTY(bool    tor_autoconnect       READ torAutoconnect    NOTIFY settingsChanged)
     Q_PROPERTY(int     lock_timeout_minutes  READ lockTimeoutMinutes NOTIFY settingsChanged)
+    Q_PROPERTY(QString  networkType          READ networkType       NOTIFY settingsChanged)
 
 public:
     explicit AccountManager(QObject *parent = nullptr);
@@ -47,6 +48,7 @@ public:
     bool    torDaemon()         const { return m_torDaemon;       }
     bool    torAutoconnect()    const { return m_torAutoconnect;  }
     int     lockTimeoutMinutes() const { return m_lockTimeoutMinutes; }
+    QString networkType()       const { return m_networkType; }
 
 
     Q_INVOKABLE QVariantList getTorIdentities() const;
@@ -72,6 +74,7 @@ public:
     QString  torOnion()  const;
     QString  torPrivKey() const;
     void     storeTorPair(const QString &onion, const QString &priv);
+
 
 public slots:
 
@@ -107,7 +110,7 @@ public slots:
     Q_INVOKABLE bool resetTrustedPeerWalletCount(const QString &onion);
     Q_INVOKABLE bool incrementTrustedPeerWalletCount(const QString &onion);
 
-    bool updateSettings(bool inspectGuard, const QString &daemonUrl, int daemonPort, bool useTorForDaemon, bool torAutoConnect, int  lockTimeoutMinutes);
+    bool updateSettings(bool inspectGuard, const QString &daemonUrl, int daemonPort, bool useTorForDaemon, bool torAutoConnect, int  lockTimeoutMinutes , const QString &networkTypeStr);
     bool setPlaceholderOnlineByLabel(const QString &label, bool online);
 
     Q_INVOKABLE bool importTorIdentity(const QString &label,
@@ -135,6 +138,7 @@ signals:
 
 
     void settingsChanged();
+    void requireDisconnectAllWallets();
     void addressBookChanged();
     void addressEntryAdded   (const QString &label, const QString &onion);
     void addressEntryRemoved (const QString &onion);
@@ -191,8 +195,11 @@ private:
     bool    m_torDaemon       = false;
     bool    m_torAutoconnect  = false;
     int     m_lockTimeoutMinutes = 30;
+    QString m_networkType = QStringLiteral("mainnet");
 
     QVariantMap m_trustedPeers;
+
+
 
 
 

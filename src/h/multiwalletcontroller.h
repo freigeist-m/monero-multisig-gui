@@ -101,6 +101,7 @@ public:
         int         restore_height = 0 ;
         QString     creator =  "user";
         bool        archived = false;
+        QString     net_type =  "mainnet";
 
     };
 
@@ -120,12 +121,13 @@ public slots:
                             quint64       total          = 0,
                             QStringList   peers          = {},
                             bool          online         = true,
-                            const QString &creator       = "user");
+                            const QString &creator       = "user",
+                            const QString net_type       = "mainnet");
 
     void connectWallet     (const QString &walletName);
     void disconnectWallet  (const QString &walletName);
     void refreshWallet     (const QString &walletName);
-    void createWallet      (const QString &walletName, const QString &password);
+    void createWallet      (const QString &walletName, const QString &password, const QString &nettype);
     void stopAllWallets();
     void requestGenMultisig(const QString &walletName);
 
@@ -148,7 +150,8 @@ public slots:
                                   bool          multisig       = false,
                                   const QString &reference     = {},
                                   const QStringList &peers     = {},
-                                  const QString &myOnion        = {});
+                                  const QString &myOnion        = {},
+                                  const QString &nettype =  "mainnet" );
     Q_INVOKABLE QStringList connectedWalletNames() const;
 
 
@@ -202,6 +205,7 @@ private:
         return norm(ref) + QLatin1Char('|') + norm(onion);
     }
 
+    bool addressMatchesCurrentNet(const QString &addr) const;
 
     AccountManager               *m_am = nullptr;
     QStringList                   m_walletNames;

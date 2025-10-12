@@ -11,12 +11,14 @@ Page {
     property bool jsonVisible: false
     property string jsonText: ""
     property bool readOnly: true
+    property string selectedNetwork: (accountManager.networkType || "mainnet" )
+
 
     property int __pendingPort: 0
     property bool hasNetworkChanges: (
         (daemonUrlField.text || "") !== (accountManager.daemon_url || "") ||
         (parseInt(daemonPortField.text) || 0) !== (accountManager.daemon_port || 0) ||
-        useTorSwitch.checked !== accountManager.use_tor_for_daemon
+        useTorSwitch.checked !== accountManager.use_tor_for_daemon || selectedNetwork !== (accountManager.networkType  || "mainnet")
     )
     property bool hasAnyChanges: (
         hasNetworkChanges ||
@@ -263,6 +265,53 @@ Page {
                         }
                     }
 
+
+                Text {
+                    text: "Network:"
+                    color: themeManager.textSecondaryColor
+                    font.pixelSize: 12
+                    Layout.alignment: Qt.AlignVCenter
+                    Layout.preferredWidth: 120
+                }
+                ComboBox {
+                    id: networkCombo
+                    Layout.fillWidth: false
+                    model: [ "mainnet", "stagenet", "testnet" ]
+                    // initialize from page property
+                    currentIndex: {
+                        const want = (selectedNetwork || "mainnet").toLowerCase()
+                        const idx = model.indexOf(want)
+                        return idx >= 0 ? idx : 0
+                    }
+                    onCurrentIndexChanged: {
+                        selectedNetwork = model[currentIndex]
+                    }
+
+                    Layout.preferredWidth: 100
+
+                    background: Rectangle {
+                        color: themeManager.surfaceColor
+                        border.color: themeManager.borderColor
+                        border.width: 1
+                        radius: 2
+                    }
+
+                    contentItem: Text {
+                        text: parent.displayText
+                        font.pixelSize: 12
+                        color: themeManager.textColor
+                        verticalAlignment: Text.AlignVCenter
+                        leftPadding: 8
+                        rightPadding: 24
+                    }
+
+                    // optional: help text
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Select Monero network")
+                    ToolTip.delay: 400
+                }
+
+
                 }
 
                 AppAlert {
@@ -278,7 +327,7 @@ Page {
                     Layout.fillWidth: true
                     visible: hasNetworkChanges
                     variant: "warning"
-                    text: qsTr("Changing daemon URL/port or Tor routing will disconnect all open wallets and background sync, and may require a short resync. Click 'Save Settings' to apply.")
+                    text: qsTr("Changing network, daemon URL/port or Tor routing will disconnect all open wallets and background sync, and may require a short resync. Click 'Save Settings' to apply.")
                 }
             }
 
@@ -363,6 +412,12 @@ Page {
                 visible: false
                 closable: true
             }
+            AppAlert {
+                visible: accountManager.networkType === "testnet" || accountManager.networkType === "stagenet"
+                text: qsTr("%1 mode. Make sure a %2 daemon is connected.").arg(accountManager.networkType).arg(accountManager.networkType)
+                closable: true
+                Layout.fillWidth: true
+            }
 
             Timer { id: statusTimer; interval: 5000; onTriggered: statusAlert.visible = false }
 
@@ -378,7 +433,7 @@ Page {
 
         content: [
             Text {
-                text: qsTr("Changing the daemon URL/port or enabling/disabling Tor will:")
+                text: qsTr("Changing the network, daemon URL/port or enabling/disabling Tor will:")
                 color: themeManager.textColor
                 wrapMode: Text.WordWrap
                 font.pixelSize: 12
@@ -545,6 +600,7 @@ Page {
             useTorSwitch.checked = accountManager.use_tor_for_daemon
             torAutoSwitch.checked = accountManager.tor_autoconnect
             lockTimeoutField.text = String(accountManager.lock_timeout_minutes || 0)
+            selectedNetwork = accountManager.networkType || "mainnet"
         }
         function onErrorOccurred(err) {
             statusAlert.text = err
@@ -572,7 +628,8 @@ Page {
             portValue,
             useTorSwitch.checked,
             torAutoSwitch.checked,
-            Math.max(0, parseInt(lockTimeoutField.text) || 0)
+            Math.max(0, parseInt(lockTimeoutField.text) || 0),
+            selectedNetwork
         )
         statusAlert.text = ok ? "Settings saved successfully" : "Failed to save settings"
         statusAlert.variant = ok ? "success" : "error"

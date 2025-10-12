@@ -167,6 +167,21 @@ Page {
                         Layout.fillWidth: true
                     }
 
+                    Text {
+                        text: qsTr("Network:")
+                        color: themeManager.textSecondaryColor
+                        font.pixelSize: 12
+                        Layout.preferredWidth: 120
+                    }
+
+                    Text {
+                        text: meta.net_type
+                        color: themeManager.textColor
+                        font.weight: Font.Medium
+                        font.pixelSize: 12
+                        Layout.fillWidth: true
+                    }
+
 
                     Text {
                         text: qsTr("Signature Threshold:")

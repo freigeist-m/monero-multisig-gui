@@ -20,6 +20,7 @@ Page {
     property string addWalletError: ""
     property int selectedPeerIndex: -1
     property string selectedUserOnion: ""
+    property string selectedNetwork: (accountManager.networkType || "mainnet" )
     ListModel { id: userOnionModel }
 
     background: Rectangle {
@@ -148,7 +149,8 @@ Page {
     function formReady() {
         const seedOk = isRecoveryMode ? (seedArea.text.trim().length && restoreHeightField.text.trim().length) : true;
         const fileOk = !isRecoveryMode ? (selectedWalletFile.length > 0) : true;
-        return peerValidationError === "" && referenceError === "" && walletNameError === "" && seedOk && fileOk;
+        const networkOK =  selectedNetwork === accountManager.networkType ? true : false
+        return peerValidationError === "" && referenceError === "" && walletNameError === "" && seedOk && fileOk && networkOK;
     }
 
     function importWalletFrontend() {
@@ -197,6 +199,8 @@ Page {
             reference = randomString(20);
         }
 
+        var nettype =  selectedNetwork
+
         const ok = walletManager.importWallet(
                      !isRecoveryMode,
                      wallet_name,
@@ -208,7 +212,7 @@ Page {
                      reference,
                      peers,
                      selectedUserOnion,
-                     "user"
+                     selectedNetwork
                      );
 
         addWalletError = ok ? leftPanel.buttonClicked("Wallets")
@@ -604,6 +608,54 @@ Page {
                             echoMode: TextInput.Password
                             Layout.fillWidth: true
                         }
+
+
+
+                            Text {
+                                text: "Network:"
+                                color: themeManager.textSecondaryColor
+                                font.pixelSize: 12
+                                Layout.alignment: Qt.AlignVCenter
+                                Layout.preferredWidth: 120
+                            }
+                            ComboBox {
+                                // id: networkCombo
+                                Layout.fillWidth: false
+                                model: [ "mainnet", "stagenet", "testnet" ]
+                                // initialize from page property
+                                currentIndex: {
+                                    const want = (selectedNetwork || "mainnet").toLowerCase()
+                                    const idx = model.indexOf(want)
+                                    return idx >= 0 ? idx : 0
+                                }
+                                onCurrentIndexChanged: {
+                                    selectedNetwork = model[currentIndex]
+                                }
+
+                                Layout.preferredWidth: 100
+
+                                background: Rectangle {
+                                    color: themeManager.surfaceColor
+                                    border.color: themeManager.borderColor
+                                    border.width: 1
+                                    radius: 2
+                                }
+
+                                contentItem: Text {
+                                    text: parent.displayText
+                                    font.pixelSize: 12
+                                    color: themeManager.textColor
+                                    verticalAlignment: Text.AlignVCenter
+                                    leftPadding: 8
+                                    rightPadding: 24
+                                }
+
+                                // optional: help text
+                                ToolTip.visible: hovered
+                                ToolTip.text: qsTr("Select Monero network")
+                                ToolTip.delay: 400
+                            }
+
                     }
 
                     ColumnLayout {
@@ -673,7 +725,62 @@ Page {
                             Layout.fillWidth: true
                             validator: IntValidator { bottom: 0 }
                         }
+
+
+
+                            Text {
+                                text: "Network:"
+                                color: themeManager.textSecondaryColor
+                                font.pixelSize: 12
+                                Layout.alignment: Qt.AlignVCenter
+                                Layout.preferredWidth: 120
+                            }
+                            ComboBox {
+                                // id: networkCombo
+                                Layout.fillWidth: false
+                                model: [ "mainnet", "stagenet", "testnet" ]
+                                // initialize from page property
+                                currentIndex: {
+                                    const want = (selectedNetwork || "mainnet").toLowerCase()
+                                    const idx = model.indexOf(want)
+                                    return idx >= 0 ? idx : 0
+                                }
+                                onCurrentIndexChanged: {
+                                    selectedNetwork = model[currentIndex]
+                                }
+
+                                Layout.preferredWidth: 100
+
+                                background: Rectangle {
+                                    color: themeManager.surfaceColor
+                                    border.color: themeManager.borderColor
+                                    border.width: 1
+                                    radius: 2
+                                }
+
+                                contentItem: Text {
+                                    text: parent.displayText
+                                    font.pixelSize: 12
+                                    color: themeManager.textColor
+                                    verticalAlignment: Text.AlignVCenter
+                                    leftPadding: 8
+                                    rightPadding: 24
+                                }
+
+                                // optional: help text
+                                ToolTip.visible: hovered
+                                ToolTip.text: qsTr("Select Monero network")
+                                ToolTip.delay: 400
+                            }
+
+
+
+
+
                     }
+
+
+
                 }
             }
 
@@ -688,6 +795,12 @@ Page {
                     Layout.alignment: Qt.AlignHCenter
                     implicitWidth: 160
                     onClicked: importWalletFrontend()
+
+                    ToolTip.visible: hovered && selectedNetwork != accountManager.networkType
+                    ToolTip.text: qsTr("Change network type in settings (mainnet/stagenet/testnet) to import wallet")
+                    ToolTip.delay: 400
+
+
                 }
 
                 AppAlert {

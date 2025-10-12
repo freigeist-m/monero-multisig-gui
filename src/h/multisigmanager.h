@@ -7,6 +7,8 @@
 #include "multiwalletcontroller.h"
 #include "torbackend.h"
 #include "multisignotifier.h"
+#include "accountmanager.h"
+
 
 class MultisigManager : public QObject
 {
@@ -19,6 +21,7 @@ class MultisigManager : public QObject
 public:
     explicit MultisigManager(MultiWalletController *wm,
                              TorBackend            *tor,
+                            AccountManager          *am,
                              QObject               *parent=nullptr);
 
     Q_INVOKABLE QString startMultisig(const QString &ref,
@@ -81,4 +84,5 @@ private:
     MultisigSession                 *m_current = nullptr;
     MultiWalletController           *m_wm      = nullptr;
     TorBackend                      *m_tor     = nullptr;
+    AccountManager                  *m_am     = nullptr;
 };

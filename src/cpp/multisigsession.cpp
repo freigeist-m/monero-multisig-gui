@@ -94,6 +94,7 @@ MultisigSession::MultisigSession(MultiWalletController *wm,
                                  const QString       &walletPassword,
                                  const QString       &myOnion,
                                  const QString       &creator,
+                                 const QString       &nettype,
                                  QObject             *parent)
     : QObject(parent)
     , m_wm(wm)
@@ -104,6 +105,7 @@ MultisigSession::MultisigSession(MultiWalletController *wm,
     , m_walletName(walletName.trimmed())
     , m_walletPassword(walletPassword)
     , m_creator(creator)
+    , m_nettype(nettype)
 {
     Q_ASSERT(wm && tor);
 
@@ -402,7 +404,8 @@ void MultisigSession::onHttp(QString onion, QString path,
         p.details  = res;
         p.detailsMatch = (p.details["ref"].toString() == m_ref &&
                           p.details["m"].toInt()      == m_m   &&
-                          p.details["n"].toInt()      == m_n);
+                          p.details["n"].toInt()      == m_n) &&
+                          p.details["nettype"].toString() == m_nettype ;
         emit peerStatusChanged(m_myOnion, m_ref);
         if (m_stage == Stage::WAIT_PEERS) checkStageCompletion();
         return;
@@ -545,7 +548,7 @@ void MultisigSession::createWallet()
     m_ping.stop();
     m_retry.start();
 
-    m_wm->createWallet(walletName(), walletPassword());
+    m_wm->createWallet(walletName(), walletPassword(), m_nettype);
     auto *w = qobject_cast<Wallet*>(m_wm->walletInstance(walletName()));
     if (!w) { stop("wallet-create-failed"); return; }
 
@@ -795,12 +798,11 @@ void MultisigSession::finalize()
 
     m_wm->addWalletToAccount(m_walletName, m_walletPassword, m_seed,
                              m_address, chainHeight, m_myOnion, m_ref,
-                             true, m_m, m_n, peers, true, m_creator);
+                             true, m_m, m_n, peers, true, m_creator, m_nettype);
 
     m_stage = Stage::COMPLETE;
     emit stageChanged(stageName(m_stage), m_myOnion, m_ref);
     emit walletAddressChanged(m_address, m_myOnion, m_ref);
-
 
 
     QMetaObject::invokeMethod(m_wm, [this]{
@@ -947,7 +949,12 @@ quint64 MultisigSession::get_chain_height_robust()
     if (!acct) {
         qWarning() << "[MultisigSession] No AccountManager available, falling back to estimator";
         const std::time_t now = QDateTime::currentSecsSinceEpoch();
-        const int nettype = 0; // Assuming mainnet
+        int nettype;
+
+        if (m_nettype == "mainnet")  {nettype = 0 ;}
+        else if (m_nettype == "testnest") { nettype = 1 ;}
+        else {nettype = 2 ; }
+
         return restore_height::estimate_from_timestamp(now, nettype);
     }
 
@@ -983,7 +990,10 @@ quint64 MultisigSession::get_chain_height_robust()
     qDebug() << "[MultisigSession] Daemon error:" << result.value("error").toString();
 
     const std::time_t now = QDateTime::currentSecsSinceEpoch();
-    const int nettype = 0; // Assuming mainnet - you may want to make this configurable
+    int nettype;
+    if (m_nettype == "mainnet")   {nettype = 0 ;}
+    else if (m_nettype == "testnest") { nettype = 1 ;}
+    else {nettype = 2 ; }
     const quint64 estimatedHeight = restore_height::estimate_from_timestamp(now, nettype);
 
     qDebug() << "[MultisigSession] Estimated chain height:" << estimatedHeight;

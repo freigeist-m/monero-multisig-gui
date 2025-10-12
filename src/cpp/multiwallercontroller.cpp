@@ -26,7 +26,7 @@ MultiWalletController::MultiWalletController(AccountManager *am, TorBackend *tor
             this, &MultiWalletController::onAccountStatusChanged,
             Qt::QueuedConnection);
 
-    connect(m_am, &AccountManager::settingsChanged,
+    connect(m_am, &AccountManager::requireDisconnectAllWallets,
             this, [this]{
                 stopAllWallets();
                 emit walletsChanged();
@@ -125,6 +125,7 @@ void MultiWalletController::loadWalletsFromAccount()
         m.my_onion   = myOnion;
         m.creator    = obj.value("creator").toString();
         m.archived   = obj.value("archived").toBool(false);
+        m.net_type    = obj.value("net_type").toString("mainnet");
 
         m_meta.insert(name, m);
 
@@ -174,6 +175,7 @@ QVariantMap MultiWalletController::metaToMap(const Meta &m) const
     out["my_onion"]  = m.my_onion;
     out["creator"]   = m.creator;
     out["archived"]  = m.archived;
+    out["net_type"] =  m.net_type;
     return out;
 }
 
@@ -553,7 +555,8 @@ void MultiWalletController::addWalletToAccount(const QString &walletName,
                                                quint64       total,
                                                QStringList   peers,
                                                bool          online,
-                                               const QString &creator)
+                                               const QString &creator,
+                                               const QString  net_type)
 {
     if (!(m_am && m_am->isAuthenticated()))
         return;
@@ -575,7 +578,8 @@ void MultiWalletController::addWalletToAccount(const QString &walletName,
         { "total",          static_cast<qint64>(total)         },
         { "peers",          QJsonArray::fromStringList(peers)  },
         { "online",         online         },
-        { "creator",        creator        }
+        { "creator",        creator        },
+        { "net_type",       net_type}
 
     };
 
@@ -681,7 +685,14 @@ void MultiWalletController::connectWallet(const QString &walletName)
         emit walletsChanged();
         bumpEpoch();
 
-        w->open(walletPath, meta.password, false);
+        const QString nettype = m_am->networkType();
+
+        if (meta.net_type != nettype ) {
+            emit rpcError(walletName , QStringLiteral("Network mismatch: current account network is '%1'.").arg(nettype));
+            return;
+        }
+
+        w->open(walletPath, meta.password, nettype);
     }
 }
 
@@ -727,7 +738,7 @@ bool MultiWalletController::walletExists(const QString &walletName) const
     return !matches.isEmpty();
 }
 
-void MultiWalletController::createWallet(const QString &walletName,const QString &password )
+void MultiWalletController::createWallet(const QString &walletName,const QString &password , const QString &nettype )
 {
     if (m_wallets.contains(walletName)){
         qDebug() << "already in instances";
@@ -766,7 +777,8 @@ void MultiWalletController::createWallet(const QString &walletName,const QString
         bumpEpoch();
 
         qDebug() << "creating new wallet";
-        w->createNew(walletPath, password , "English",  false , 1);
+
+        w->createNew(walletPath, password , "English",  nettype , 1);
     }
 }
 
@@ -832,7 +844,8 @@ bool MultiWalletController::importWallet(bool          fromFile,
                                          bool           multisig,
                                          const QString &reference,
                                          const QStringList &peers,
-                                         const QString &myOnionArg)
+                                         const QString &myOnionArg,
+                                         const QString &nettype )
 {
 
 
@@ -841,6 +854,11 @@ bool MultiWalletController::importWallet(bool          fromFile,
     if (!m_am || !m_am->isAuthenticated()) {
         qDebug().noquote() << "Not authenticated";
         emit rpcError(QString(), tr("Not authenticated"));  return false;
+    }
+
+    if ( m_am->networkType() != nettype) {
+        qDebug().noquote() << "Network mismatch";
+        emit rpcError(QString(), tr("Network mismatch"));  return false;
     }
 
 
@@ -996,6 +1014,7 @@ bool MultiWalletController::importWallet(bool          fromFile,
                     m.restore_height = restoreHeight;
                     m.my_onion   = chosenMyOnion;
                     m.creator    = "user";
+                    m.net_type =  nettype;
 
                     m_meta.insert(walletName, m);
                     if (!reference.isEmpty() && !chosenMyOnion.isEmpty())
@@ -1015,7 +1034,8 @@ bool MultiWalletController::importWallet(bool          fromFile,
                                        /*total*/ 0,
                                        peersOut,
                                        /*online*/ true,
-                                       "user");
+                                       "user",
+                                       nettype);
 
 
 
@@ -1045,7 +1065,8 @@ bool MultiWalletController::importWallet(bool          fromFile,
                                        m.total,
                                        m.peers,
                                        m.online,
-                                       m.creator);
+                                       m.creator,
+                                       m.net_type);
                 }, Qt::QueuedConnection);
 
 
@@ -1067,7 +1088,8 @@ bool MultiWalletController::importWallet(bool          fromFile,
                                            m.total,
                                            m.peers,
                                            m.online,
-                                           m.creator);
+                                           m.creator,
+                                           m.net_type);
                     }
                     if (isMulti)
                         w->getMultisigParams();
@@ -1095,7 +1117,8 @@ bool MultiWalletController::importWallet(bool          fromFile,
                                        tot,
                                        m.peers,
                                        m.online,
-                                       m.creator);
+                                       m.creator,
+                                       m.net_type);
                 }, Qt::QueuedConnection);
 
 
@@ -1104,7 +1127,7 @@ bool MultiWalletController::importWallet(bool          fromFile,
         emit walletsChanged();
         qDebug().noquote() << "Trying to open";
 
-        w->open(walletPath, password, false);
+        w->open(walletPath, password, nettype);
         return true;
     }
 
@@ -1127,6 +1150,7 @@ bool MultiWalletController::importWallet(bool          fromFile,
                 m.restore_height = restoreHeight;
                 m.my_onion   = chosenMyOnion;
                 m.creator    = "user";
+                m.net_type =  nettype;
 
                 m_meta.insert(walletName, m);
                 if (!reference.isEmpty() && !chosenMyOnion.isEmpty())
@@ -1144,7 +1168,8 @@ bool MultiWalletController::importWallet(bool          fromFile,
                                    /*total*/ 0,
                                    peersOut,
                                    /*online*/ true,
-                                   "user");
+                                   "user",
+                                   nettype);
 
                 w->isMultisig();
                 w->startSync(120);
@@ -1171,7 +1196,8 @@ bool MultiWalletController::importWallet(bool          fromFile,
                                        m.total,
                                        m.peers,
                                        m.online,
-                                       m.creator);
+                                       m.creator,
+                                       m.net_type);
                 }
                 if (isMulti)
                     w->getMultisigParams();
@@ -1197,7 +1223,8 @@ bool MultiWalletController::importWallet(bool          fromFile,
                                    tot,
                                    m.peers,
                                    m.online,
-                                   m.creator);
+                                   m.creator,
+                                   m.net_type);
             }, Qt::QueuedConnection);
 
     m_wallets.insert(walletName, w);
@@ -1209,7 +1236,7 @@ bool MultiWalletController::importWallet(bool          fromFile,
                        seedWords,
                        restoreHeight,
                        /*language*/ "English",
-                       /*testnet*/ false,
+                       /*testnet*/ nettype,
                        1,
                        multisig);
     return true;
@@ -1305,4 +1332,24 @@ bool MultiWalletController::setWalletArchived(const QString &walletName, bool ar
 
     emit walletsChanged();
     return true;
+}
+
+
+bool MultiWalletController::addressMatchesCurrentNet(const QString &address) const
+{
+    if (address.isEmpty()) return true; // nothing to check
+    const QString net = m_am->networkType();
+    const QChar c = address.trimmed().left(1).toUpper().at(0);
+
+    if (net == "mainnet") {
+        // Standard(4), Sub(8), Integrated(4)
+        return (c == QLatin1Char('4') || c == QLatin1Char('8'));
+    } else if (net == "testnet") {
+        // Standard(9 or A), Sub(B), Integrated(9 or A)
+        return (c == QLatin1Char('9') || c == QLatin1Char('A') || c == QLatin1Char('B'));
+    } else if (net == "stagenet") {
+        // Standard(5), Sub(7), Integrated(5)
+        return (c == QLatin1Char('5') || c == QLatin1Char('7'));
+    }
+    return false;
 }

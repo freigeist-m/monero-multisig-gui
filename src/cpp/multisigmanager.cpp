@@ -5,8 +5,8 @@
 #include <QVariantMap>
 
 
-MultisigManager::MultisigManager(MultiWalletController *wm, TorBackend *tor, QObject *parent)
-    : QObject(parent), m_wm(wm), m_tor(tor) {}
+MultisigManager::MultisigManager(MultiWalletController *wm, TorBackend *tor, AccountManager *am,  QObject *parent)
+    : QObject(parent), m_wm(wm), m_tor(tor) , m_am(am) {}
 
 
 // ---- helpers ----
@@ -40,8 +40,11 @@ QString MultisigManager::startMultisig(const QString &ref,int m,int n,const QStr
 
     if (m_wm && !m_wm->walletNameForRef(r, o).isEmpty()) return QString();
 
+
+    const QString nettype = m_am->networkType();
+
     auto *s = new MultisigSession(m_wm, m_tor, r, m, n, peers,
-                                  walletName, walletPassword, o, creator, this);
+                                  walletName, walletPassword, o, creator, nettype, this);
 
 
     connect(s, &MultisigSession::finished,
@@ -134,6 +137,7 @@ QString MultisigManager::startMultisigNotifier(const QString &ref, const QString
                                    notifyPeers,
                                    myOnion,
                                     false,
+                                   s->net_type(),
                                    this);
 
 
@@ -193,6 +197,7 @@ QString MultisigManager::startStandaloneNotifier(const QString &ref, int m, int 
                                               notifyPeers,
                                               o,
                                               true,
+                                              m_am->networkType(),
                                               this);
 
     connect(new_notifier, &MultisigNotifier::finished,

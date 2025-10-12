@@ -12,15 +12,38 @@ Item {
     property int editingIndex: -1
 
     function isValidMoneroAddress(addr) {
-        if (typeof addr !== "string") {
-            return false;
-        }
+        if (typeof addr !== "string") return false;
 
         const a = addr.replace(/\s+/g, "");
         const B58 = "[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]";
+
+        // normalize network from AccountManager (fallback to mainnet)
+        const net = (accountManager.networkType || "mainnet").toLowerCase();
+
+        // prefixes per network
+        let stdPrefix, subPrefix, intPrefix;
+        switch (net) {
+        case "testnet":
+            stdPrefix = "[9]";  // standard
+            subPrefix = "[B]";   // subaddress
+            intPrefix = "[A]";  // integrated
+            break;
+        case "stagenet":
+            stdPrefix = "[5]";
+            subPrefix = "[7]";
+            intPrefix = "[5]";
+            break;
+        default: // mainnet
+            stdPrefix = "[4]";
+            subPrefix = "[8]";
+            intPrefix = "[4]";
+            break;
+        }
+
+        // 95 chars for standard/subaddress, 106 for integrated
         const re = new RegExp(
-                     `^(?:4${B58}{94}|8${B58}{94}|4${B58}{105})$`
-                     );
+            `^(?:${stdPrefix}${B58}{94}|${subPrefix}${B58}{94}|${intPrefix}${B58}{105})$`
+        );
 
         return re.test(a);
     }

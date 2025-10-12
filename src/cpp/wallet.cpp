@@ -144,7 +144,7 @@ void Wallet::setDaemonAddress(const QString &addr)
 void Wallet::createNew(const QString &path,
                        const QString &password,
                        const QString &language,
-                       bool          testnet,
+                       const QString &nettype,
                        quint64       kdfRounds)
 {
     enqueue(QStringLiteral("createNew"), [=]() {
@@ -152,7 +152,15 @@ void Wallet::createNew(const QString &path,
             const std::string pathStr      = path.toStdString();
             epee::wipeable_string passWipe = epee::wipeable_string{password.toStdString().c_str()};
 
-            m_netType = testnet ? network_type::TESTNET : network_type::MAINNET;
+            if (nettype== "testnet"){
+                m_netType =  network_type::TESTNET;
+            }
+            else if (nettype == "stagenet") {
+                m_netType =  network_type::STAGENET;
+            }
+            else {m_netType =  network_type::MAINNET;
+            }
+
             m_wallet.reset(new wallet2(m_netType, kdfRounds, /*unattended=*/true));
 
             std::string proxyStr;
@@ -188,12 +196,21 @@ void Wallet::createNew(const QString &path,
 
 void Wallet::open(const QString &path,
                   const QString &password,
-                  bool          testnet,
+                  const QString &nettype,
                   quint64       kdfRounds)
 {
     enqueue(QStringLiteral("open"), [=]() {
         try {
-            m_netType = testnet ? network_type::TESTNET : network_type::MAINNET;
+            if (nettype== "testnet"){
+                m_netType =  network_type::TESTNET;
+            }
+            else if (nettype == "stagenet") {
+                m_netType =  network_type::STAGENET;
+            }
+            else {m_netType =  network_type::MAINNET;
+            }
+
+
             m_wallet.reset(new wallet2(m_netType, kdfRounds, /*unattended=*/true));
 
             std::string proxyStr;
@@ -276,13 +293,22 @@ void Wallet::restoreFromSeed(const QString &path,
                              const QString &seedWords,
                              quint64 restoreHeight,
                              const QString &language,
-                             bool testnet,
+                             const QString &nettype,
                              quint64 kdfRounds,
                              bool isMultisig)
 {
     enqueue(QStringLiteral("restoreFromSeed"), [=] {
         try {
-            m_netType = testnet ? network_type::TESTNET : network_type::MAINNET;
+
+            if (nettype== "testnet"){
+                m_netType =  network_type::TESTNET;
+            }
+            else if (nettype == "stagenet") {
+                m_netType =  network_type::STAGENET;
+            }
+            else {m_netType =  network_type::MAINNET;
+            }
+
             m_wallet.reset(new wallet2(m_netType, kdfRounds, /*unattended=*/true));
 
             std::string proxyStr;

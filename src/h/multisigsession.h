@@ -47,6 +47,7 @@ public:
                              const QString         &walletPassword,
                              const QString         &myOnion,
                              const QString         &creator,
+                             const QString         &nettype,
                              QObject               *parent = nullptr);
     ~MultisigSession() override;
 
@@ -61,6 +62,7 @@ public:
 
     Q_INVOKABLE int m() const { return m_m; }
     Q_INVOKABLE int n() const { return m_n; }
+    Q_INVOKABLE QString  net_type() const { return m_nettype; }
 
     Q_INVOKABLE QByteArray blobForStage(const QString &stage, int round) const;
     Q_INVOKABLE void onFirstKexMsg(QByteArray blob);
@@ -156,6 +158,7 @@ private:
 
     QString     m_myOnion;
     QString     m_creator;
+    QString     m_nettype;
 
     struct PeerState {
         QString    onion;
