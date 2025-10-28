@@ -23,6 +23,49 @@ Page {
         color: themeManager.backgroundColor
     }
 
+    // Build onion -> label map from Address Book + Trusted Peers
+    function _peerLabelsByOnion() {
+        let out = {};
+        if (accountManager && accountManager.is_authenticated) {
+            // Address Book
+            const ab = accountManager.getAddressBook() || [];
+            for (let i = 0; i < ab.length; ++i) {
+                const it = ab[i];
+                const on = normOnion(String(it.onion || ""));
+                const lb = String(it.label || "");
+                if (on && lb) out[on] = lb;
+            }
+
+            // Trusted Peers (JSON keyed by onion)
+            try {
+                const tp = JSON.parse(accountManager.getTrustedPeers() || "{}");
+                for (const onRaw in tp) {
+                    if (!tp.hasOwnProperty(onRaw)) continue;
+                    const on = normOnion(String(onRaw || ""));
+                    const lb = String((tp[onRaw] && tp[onRaw].label) || "");
+                    if (on && lb) out[on] = lb;
+                }
+            } catch (e) {
+                console.log("[IncomingPage] trusted peers JSON parse error:", e);
+            }
+        }
+        return out;
+    }
+
+    // Update labels in peersModel without rebuilding it
+    function refreshPeerLabels() {
+        const labels = _peerLabelsByOnion();
+        for (let i = 0; i < peersModel.count; ++i) {
+            const row = peersModel.get(i);
+            const on = normOnion(row.onion || "");
+            const lb = labels[on] || "";
+            if ((row.label || "") !== lb) {
+                peersModel.setProperty(i, "label", lb);
+            }
+        }
+    }
+
+
     function resolveMyOnionForSession(o) {
 
         let ours = []
@@ -108,12 +151,17 @@ Page {
 
             peersModel.clear()
             const myOnion = myOnionForSession
+            const labels = _peerLabelsByOnion();
+
             if (o.peers) {
                 for (let k in o.peers) {
                     const p = o.peers[k]
+
+
                     if (Array.isArray(p)) {
                         peersModel.append({
-                            onion: k,
+                            onion:k,
+                            label: labels[k] || "",
                             stage: p[0] || "UNKNOWN",
                             received: !!p[1],
                             signed: !!p[2],
@@ -122,7 +170,8 @@ Page {
                         })
                     } else {
                         peersModel.append({
-                            onion: k,
+                            onion:k,
+                            label: labels[k] || "",
                             stage: p.stage || "UNKNOWN",
                             received: !!(p.ready || p.received || p.received_transfer),
                             signed: !!p.signed,
@@ -659,7 +708,9 @@ Page {
                                     spacing: 4
 
                                     Text {
-                                        text: isOwn ? onion + qsTr(" (you)") : onion
+                                        text: isOwn
+                                              ? (onion + qsTr(" (you)"))
+                                              : ((label && label.length) ? (onion + " (" + label + ")") : onion)
                                         Layout.fillWidth: true
                                         elide: Text.ElideMiddle
                                         font.family: "Monospace"

@@ -48,9 +48,9 @@ Page {
         let stdPrefix, subPrefix, intPrefix;
         switch (net) {
         case "testnet":
-            stdPrefix = "[9]";  // standard
+            stdPrefix = "[9A]";  // standard
             subPrefix = "[B]";   // subaddress
-            intPrefix = "[A]";  // integrated
+            intPrefix = "[9A]";  // integrated
             break;
         case "stagenet":
             stdPrefix = "[5]";

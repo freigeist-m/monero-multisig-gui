@@ -7,11 +7,14 @@
 #include <stdexcept>
 #include <cstdio>
 #include <algorithm>
+#include <cctype>
 
 namespace restore_height {
 
 // 120s target block time (Monero)
 static constexpr int64_t kTargetSecsPerBlock = 120;
+
+static constexpr int64_t kConservativeNonMainnetSecsPerBlock = 150;
 
 
 struct Anchor { uint64_t height; std::time_t ts; };
@@ -22,12 +25,12 @@ inline Anchor anchor_for_network(int nettype /* 0=MAINNET, 1=TESTNET, 2=STAGENET
         // v2 fork anchor: height 1,009,827 at unix time 1458748658
         return Anchor{1009827, static_cast<std::time_t>(1458748658)};
     case 1: // TESTNET
-        // v2 fork anchor: height 624,634 at unix time 1448285909
-        return Anchor{624634, static_cast<std::time_t>(1448285909)};
+
+        return Anchor{2862744, static_cast<std::time_t>(1761436800)};
     case 2: // STAGENET
     default:
 
-        return Anchor{0, static_cast<std::time_t>(0)};
+        return Anchor{1977817, static_cast<std::time_t>(1761436800)};
     }
 }
 
@@ -55,10 +58,16 @@ inline uint64_t estimate_from_timestamp(std::time_t t,
                                         int nettype /* 0=MAINNET,1=TESTNET,2=STAGENET */,
                                         uint64_t safety_blocks = 7 * 720 /* ≈ one week */) {
     const Anchor a = anchor_for_network(nettype);
+
+    // Choose secs-per-block: keep mainnet at 120s, bias non-mainnet to 150s.
+    const int64_t spb = (nettype == 0) ? kTargetSecsPerBlock
+                                       : kConservativeNonMainnetSecsPerBlock;
+
+
     const int64_t dt = static_cast<int64_t>(t) - static_cast<int64_t>(a.ts);
     // blocks since anchor (floor division)
-    const int64_t since_anchor = dt >= 0 ? dt / kTargetSecsPerBlock
-                                         : -(((-dt) + (kTargetSecsPerBlock - 1)) / kTargetSecsPerBlock);
+    const int64_t since_anchor = dt >= 0 ? dt / spb
+                                         : -(((-dt) + (spb - 1)) / spb);
     int64_t h = static_cast<int64_t>(a.height) + since_anchor - static_cast<int64_t>(safety_blocks);
     if (h < 0) h = 0;
     return static_cast<uint64_t>(h);

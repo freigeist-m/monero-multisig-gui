@@ -20,7 +20,6 @@
 #include <QSet>
 #include <sodium.h>
 
-
 using namespace CryptoUtils;
 
 namespace {
@@ -300,7 +299,6 @@ bool MultisigApiRouter::handlePing(const QByteArray &method,const QByteArray &ra
 
     auto *s = m_mgr->sessionFor(m_boundOnion, ref);
     if (!s) { sendPlain(sock, 404, "Not found"); return true; }
-
     if (s) {
     const QString mine = s->myOnion().trimmed().toLower();
     if (!mine.isEmpty() && QString::compare(m_boundOnion, mine, Qt::CaseInsensitive) != 0) {
@@ -468,7 +466,6 @@ bool MultisigApiRouter::handleNew(const QByteArray &method,const QByteArray &raw
     QStringList peers; for (const auto &v : peersArr) peers << v.toString();
 
     const QString my_net_type =  m_acct->networkType();
-
     if (net_type !=  my_net_type){
         sendPlain(sock, 404, "Not found");
         return true;

@@ -24,6 +24,36 @@ Page {
         color: themeManager.backgroundColor
     }
 
+    // Build onion -> label map from Address Book + Trusted Peers
+    function _peerLabelsByOnion() {
+        let out = {};
+        if (accountManager && accountManager.is_authenticated) {
+            // Peer Address Book
+            const ab = accountManager.getAddressBook() || [];
+            for (let i = 0; i < ab.length; ++i) {
+                const it = ab[i];
+                const on = normOnion(String(it.onion || ""));
+                const lb = String(it.label || "");
+                if (on && lb) out[on] = lb;
+            }
+
+            // Trusted Peers (JSON string keyed by onion)
+            try {
+                const tp = JSON.parse(accountManager.getTrustedPeers() || "{}");
+                for (const onRaw in tp) {
+                    if (!tp.hasOwnProperty(onRaw)) continue;
+                    const on = normOnion(String(onRaw || ""));
+                    const lb = String((tp[onRaw] && tp[onRaw].label) || "");
+                    if (on && lb) out[on] = lb;
+                }
+            } catch (e) {
+                console.log("Trusted peers JSON parse error:", e);
+            }
+        }
+        return out;
+    }
+
+
     function goToTracker(tref) {
         var pageComponent = Qt.resolvedUrl("TransferTracker.qml");
         middlePanel.currentPageUrl = pageComponent;
@@ -74,6 +104,7 @@ Page {
             totalAmountXmr = (totalA + _feeXmr) /1e12
             peersModel.clear()
             if (o.peers) {
+                const labels = _peerLabelsByOnion();
                 for (const k in o.peers) {
                     const p = o.peers[k]
                     if (isSelfPeer(k, my)) {
@@ -81,6 +112,7 @@ Page {
                     }
                     peersModel.append({
                         onion: k,
+                        label: labels[k] || "",
                         online: !!p.online,
                         ready: !!p.ready,
                         received: !!p.received_transfer,
@@ -584,7 +616,7 @@ Page {
                                     spacing: 2
 
                                     Text {
-                                        text: onion
+                                        text:  (label && label.length) ? (onion + " (" + label + ")") : onion
                                         Layout.fillWidth: true
                                         elide: Text.ElideMiddle
                                         font.family: "Monospace"

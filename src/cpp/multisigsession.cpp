@@ -952,7 +952,7 @@ quint64 MultisigSession::get_chain_height_robust()
         int nettype;
 
         if (m_nettype == "mainnet")  {nettype = 0 ;}
-        else if (m_nettype == "testnest") { nettype = 1 ;}
+        else if (m_nettype == "testnet") { nettype = 1 ;}
         else {nettype = 2 ; }
 
         return restore_height::estimate_from_timestamp(now, nettype);
@@ -992,7 +992,7 @@ quint64 MultisigSession::get_chain_height_robust()
     const std::time_t now = QDateTime::currentSecsSinceEpoch();
     int nettype;
     if (m_nettype == "mainnet")   {nettype = 0 ;}
-    else if (m_nettype == "testnest") { nettype = 1 ;}
+    else if (m_nettype == "testnet") { nettype = 1 ;}
     else {nettype = 2 ; }
     const quint64 estimatedHeight = restore_height::estimate_from_timestamp(now, nettype);
 

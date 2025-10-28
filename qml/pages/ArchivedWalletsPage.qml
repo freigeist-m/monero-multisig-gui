@@ -283,9 +283,16 @@ Page {
                     AppButton {
                         text: isConnected ? qsTr("Disconnect") : qsTr("Connect")
                         variant: isConnected ? "secondary" : "primary"
+                        enabled: walletMeta.net_type ===  accountManager.networkType
                         onClicked: isConnected
                                    ? WalletManager.disconnectWallet(name)
                                    : WalletManager.connectWallet(name)
+
+                        ToolTip.visible: hovered && walletMeta.net_type !==  accountManager.networkType
+                        ToolTip.text: qsTr("Select %1 network in account settings").arg(walletMeta.net_type)
+                        ToolTip.delay: 500
+
+
                     }
 
                     AppButton {

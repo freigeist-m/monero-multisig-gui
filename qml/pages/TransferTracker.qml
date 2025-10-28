@@ -20,6 +20,42 @@ Page {
         color: themeManager.backgroundColor
     }
 
+    // Normalize onions to lowercase + ".onion"
+    function normOnion(s) {
+        if (!s) return ""
+        s = ("" + s).trim().toLowerCase()
+        return s.endsWith(".onion") ? s : (s + ".onion")
+    }
+
+    // Build onion -> label map from Address Book + Trusted Peers
+    function _peerLabelsByOnion() {
+        let out = {};
+        if (accountManager && accountManager.is_authenticated) {
+            // Peer Address Book
+            const ab = accountManager.getAddressBook() || [];
+            for (let i = 0; i < ab.length; ++i) {
+                const it = ab[i];
+                const on = normOnion(String(it.onion || ""));
+                const lb = String(it.label || "");
+                if (on && lb) out[on] = lb;
+            }
+            // Trusted Peers (JSON keyed by onion)
+            try {
+                const tp = JSON.parse(accountManager.getTrustedPeers() || "{}");
+                for (const onRaw in tp) {
+                    if (!tp.hasOwnProperty(onRaw)) continue;
+                    const on = normOnion(String(onRaw || ""));
+                    const lb = String((tp[onRaw] && tp[onRaw].label) || "");
+                    if (on && lb) out[on] = lb;
+                }
+            } catch (e) {
+                console.log("[TransferTracker] trusted peers JSON parse error:", e);
+            }
+        }
+        return out;
+    }
+
+
     function parseSnapshot() {
         try {
             let jsonStr = TransferManager.getSavedTransferDetails(transferRef)
@@ -60,11 +96,13 @@ Page {
             snapshot = o
             peersModel.clear()
             if (o.peers) {
+                const labels = _peerLabelsByOnion();
                 for (let k in o.peers) {
                     let p = o.peers[k]
                     if (Array.isArray(p)) {
                         peersModel.append({
                             onion: k,
+                            label:   labels[k] || "",
                             stage: p[0] || "",
                             received: p[1] || false,
                             signed: p[2] || false,
@@ -74,6 +112,7 @@ Page {
                     } else {
                         peersModel.append({
                             onion: k,
+                            label:   labels[k] || "",
                             stage: p[0] || "",
                             received: p.ready || p.received || false,
                             signed: p.signed || false,
@@ -604,7 +643,7 @@ Page {
                                         spacing: 2
 
                                         Text {
-                                            text: onion
+                                            text: (label && label.length) ? (onion + " (" + label + ")") : onion
                                             Layout.fillWidth: true
                                             elide: Text.ElideMiddle
                                             font.family: "Monospace"

@@ -25,6 +25,33 @@ Page {
         return s.endsWith(".onion") ? s : (s + ".onion")
     }
 
+    function _peerLabelsByOnion() {
+        let out = {};
+        if (accountManager && accountManager.is_authenticated) {
+            // Peer Address Book
+            const ab = accountManager.getAddressBook() || [];
+            for (let i = 0; i < ab.length; ++i) {
+                const it = ab[i];
+                const on = normOnion(String(it.onion || ""));
+                const lb = String(it.label || "");
+                if (on && lb) out[on] = lb;
+            }
+            // Trusted Peers (JSON keyed by onion)
+            try {
+                const tp = JSON.parse(accountManager.getTrustedPeers() || "{}");
+                for (const onRaw in tp) {
+                    if (!tp.hasOwnProperty(onRaw)) continue;
+                    const on = normOnion(String(onRaw || ""));
+                    const lb = String((tp[onRaw] && tp[onRaw].label) || "");
+                    if (on && lb) out[on] = lb;
+                }
+            } catch(e) {
+                console.log("[SavedTransfer] trusted peers JSON parse error:", e);
+            }
+        }
+        return out;
+    }
+
     function isSelfPeer(peerOnion, myOnion) {
         if (!myOnion) return false
         return normOnion(peerOnion) === myOnion
@@ -67,10 +94,12 @@ Page {
 
             peersModel.clear()
             const myOnion = normOnion(torServer.onionAddress || "")
+            const labels  = _peerLabelsByOnion()
             for (let k in o.peers) {
                 let p = o.peers[k]
                 peersModel.append({
                     onion: k,
+                    label:   labels[k] || "",
                     stage: p[0],
                     received: p[1],
                     signed: p[2],
@@ -599,7 +628,9 @@ Page {
                                     spacing: 2
 
                                     Text {
-                                        text: isOwn ? onion + qsTr(" (you)") : onion
+                                        text: isOwn
+                                              ? (onion + qsTr(" (you)"))
+                                              : ((label && label.length) ? (onion + " (" + label + ")") : onion)
                                         Layout.fillWidth: true
                                         elide: Text.ElideMiddle
                                         font.family: "Monospace"

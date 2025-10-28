@@ -65,6 +65,51 @@ Page {
     //     return re.test(cleaned)
     // }
 
+
+    // Build a map onion -> label from address book + trusted peers
+    function _peerLabelsByOnion() {
+        let out = {};
+
+        if (accountManager && accountManager.is_authenticated) {
+            // Peer Address Book
+            const ab = accountManager.getAddressBook() || [];
+            for (let i = 0; i < ab.length; ++i) {
+                const it = ab[i];
+                const on = normalizeOnion(String(it.onion || ""));
+                const lb = String(it.label || "");
+                if (on && lb) out[on] = lb;
+            }
+
+            // Trusted Peers (JSON string with onion keys)
+            try {
+                const tp = JSON.parse(accountManager.getTrustedPeers() || "{}");
+                for (const onRaw in tp) {
+                    if (!tp.hasOwnProperty(onRaw)) continue;
+                    const on = normalizeOnion(String(onRaw || ""));
+                    const lb = String((tp[onRaw] && tp[onRaw].label) || "");
+                    if (on && lb) out[on] = lb;
+                }
+            } catch (e) {
+                console.log("Could not parse trusted peers JSON:", e);
+            }
+        }
+        return out;
+    }
+
+    // Update existing rows in peerModel with labels (if found)
+    function refreshPeerLabels() {
+        const labels = _peerLabelsByOnion();
+        for (let i = 0; i < peerModel.count; ++i) {
+            const p = peerModel.get(i);
+            const on = normalizeOnion(p.onion || "");
+            const lb = labels[on] || "";
+            if ((p.label || "") !== lb) {
+                peerModel.setProperty(i, "label", lb);
+            }
+        }
+    }
+
+
     function _validAddress(s) {
         if (typeof s !== "string") return false;
 
@@ -74,14 +119,14 @@ Page {
 
         // normalize network from AccountManager (fallback to mainnet)
         const net = (accountManager.networkType || "mainnet");
-
+        console.log(net)
         // prefixes per network
         let stdPrefix, subPrefix, intPrefix;
         switch (net) {
         case "testnet":
-            stdPrefix = "[9]";  // standard
+            stdPrefix = "[9A]";  // standard
             subPrefix = "[B]";   // subaddress
-            intPrefix = "[A]";  // integrated
+            intPrefix = "[9A]";  // integrated
             break;
         case "stagenet":
             stdPrefix = "[5]";
@@ -630,7 +675,9 @@ Page {
                                     Text {
                                         anchors.fill: parent
                                         anchors.margins: 6
-                                        text: own ? onion + qsTr(" (you)") : onion
+                                        text: own
+                                              ? onion + qsTr(" (you)")
+                                              : (label && label.length ? (onion + " (" + label + ")") : onion)
                                         font.family: "Monospace"
                                         font.pixelSize: 10
                                         color: themeManager.textColor
@@ -721,14 +768,18 @@ Page {
         const matches = peers.filter(p => myOnions.indexOf(p) !== -1)
         const my = (matches.length === 1) ? matches[0] : ""
 
+        const labels = _peerLabelsByOnion();
+
+
         if (my && peers.indexOf(my) !== -1)
-            peerModel.append({ onion: my, include: true, own: true })
+            peerModel.append({ onion: my, include: true, own: true,  label: labels[my] || "" })
 
         for (let i = 0; i < peers.length; i++) {
             const p = peers[i]
             if (p === my) continue
-            peerModel.append({ onion: p, include: false, own: false })
+            peerModel.append({ onion: p, include: false, own: false, label: labels[p] || "" })
         }
+
 
         if (destModel.count===0) destModel.append({address:"", amount:""})
 

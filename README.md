@@ -157,14 +157,24 @@ cmake --build build -j$(nproc)
 cmake --install build --prefix AppDir/usr
 
 # Create AppImage
+
+# Option A: using the binary directly from your *Release* build folder (e.g. Qt Creator)
+# Replace <PATH_TO_RELEASE_BUILD> with your actual Release build dir
+#   Examples:
+#     ~/monero-multisig-gui/build-Desktop_Qt_6_8_2-Release
+#     ~/monero-multisig-gui/build/Desktop_Qt_6_8_2-Release
+EXECUTABLE="<PATH_TO_RELEASE_BUILD>/appmonero-multisig-gui"
+
+# Option B: if you ran `cmake --install build --prefix AppDir/usr`, use the staged binary:
+# EXECUTABLE="AppDir/usr/bin/appmonero-multisig-gui"
+
 ./linuxdeploy-x86_64.AppImage \
   --appdir AppDir \
-  -e AppDir/usr/bin/appmonero-multisig-gui \
+  -e "$EXECUTABLE" \
   -d monero-multisig.desktop \
   -i resources/icons/monero_rotated_blue.svg \
   --plugin qt \
   --output appimage
-```
 
 This will create a file named `Monero_Multisig_GUI-x86_64.AppImage` in your current directory.
 
@@ -320,7 +330,7 @@ Navigate to the `dist/Monero_Multisig_GUI-<version>/` folder and double-click `a
 
 The following features are planned for future releases:
 
-- **macOS Support**: Native macOS application release
+- **macOS Support**: Native macOS application release (if donations and interest are high)
 - **Headless Version**: Command-line/headless application client for backend integration and automation
 - **GitHub Pages**: Documentation site with tutorials
 - **Video Tutorials**: Step-by-step video guides for wallet setup and coordination
