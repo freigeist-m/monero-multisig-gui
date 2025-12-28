@@ -22,7 +22,7 @@ int main(int argc, char *argv[])
     qputenv("QT_QUICK_CONTROLS_STYLE", "Fusion");
     QGuiApplication app(argc, argv);
 
-    QCoreApplication::setApplicationName("Monero Multisig");
+    QCoreApplication::setApplicationName("Monero-Multisig");
 
     #ifdef APP_VERSION
         QCoreApplication::setApplicationVersion(APP_VERSION);

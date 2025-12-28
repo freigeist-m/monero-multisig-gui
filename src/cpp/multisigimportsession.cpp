@@ -191,17 +191,16 @@ void MultisigImportSession::initialize(MultiWalletController *wm, TorBackend *to
 
 QString MultisigImportSession::_accountCacheDir() const
 {
+    if (!m_wm) return {};
 
-    if (!m_wm) {
+    AccountManager *am = m_wm->accountManager();
+    if (!am) return {};
 
-        return QStringLiteral("./wallets/multisig_cache");
-    }
-    QObject *amObj = m_wm->property("accountManager").value<QObject*>();
-    auto *am = qobject_cast<AccountManager*>(amObj);
-    const QString account = am ? am->currentAccount() : QString();
-    QString cacheDir = QStringLiteral("./wallets/%1/multisig_cache").arg(account);
+    const QString acct = am->currentAccount().trimmed();
+    if (acct.isEmpty())
+        return QDir(am->walletsDir()).filePath("multisig_cache");
 
-    return cacheDir;
+    return QDir(am->walletsDir()).filePath(acct + "/multisig_cache");
 }
 
 void MultisigImportSession::start()
@@ -564,7 +563,7 @@ void MultisigImportSession::_attemptImport(const QString &walletName, const QJso
 
     m_importConnections.insert(walletName, connection);
 
-    w->importMultisigInfos(payloads,walletName);
+    w->importMultisigInfosBulk(payloads,walletName);
 }
 
 void MultisigImportSession::_onImportMultisigResult(const QString &walletName, int actualImported)

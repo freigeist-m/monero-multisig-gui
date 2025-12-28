@@ -78,7 +78,9 @@ void SimpleTransfer::start()
 {
     if (m_stage != Stage::INIT) return;
     Wallet *w = walletByRef(m_walletRef);
-    if (!w) { setStage(Stage::ERROR, "Wallet not found"); return; }
+    if (!w) { setStage(Stage::ERROR, "Wallet not found");
+        qDebug().noquote() << "Wallet not found" <<m_walletRef << m_walletName;
+        return; }
 
     // connect once
     connect(w, &Wallet::simpleTransferPrepared,
@@ -133,7 +135,10 @@ void SimpleTransfer::onPrepared(QString ref, quint64 feeAtomic, QVariantList nor
         emit statusChanged(warning);
 
     Wallet *w = walletByRef(m_walletRef);
-    if (!w) { setStage(Stage::ERROR, "Wallet not found"); return; }
+    if (!w) { setStage(Stage::ERROR, "Wallet not found");
+        // qDebug().noquote() << "Wallet not found";
+
+        return; }
     setStage(Stage::VALIDATING, QStringLiteral("Describing transfer…"));
     w->describePreparedSimpleTransfer(m_transferRef);
 }

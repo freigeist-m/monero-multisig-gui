@@ -331,9 +331,12 @@ QObject* TransferManager::getIncomingSession(const QString &ref) const
 
 QString TransferManager::makeTransferRef(const QString &walletRef,  const QString &myOnion) const
 {
-    const QString onionTag = normOnion(myOnion).left(5);
-    const qint64 ts = QDateTime::currentMSecsSinceEpoch();
-    return QStringLiteral("%1_%2_%3").arg(walletRef, onionTag, QString::number(ts));
+    const QString onionTag = normOnion(myOnion).left(10);
+    const quint64 r = QRandomGenerator::global()->generate64();
+    return QStringLiteral("%1_%2_%3_%4")
+        .arg(walletRef, onionTag)
+        .arg(QDateTime::currentMSecsSinceEpoch())
+        .arg(QString::number(r, 16));
 }
 
 QString TransferManager::normOnion(QString s)
@@ -669,7 +672,7 @@ QString TransferManager::startSimpleTransfer(const QString &walletRef,
     for (const auto &d : msigDests) dests.push_back({ d.address, d.amount });
 
     const QList<int> feeIdx = toFeeIndexList(feeSplitVar, dests.size());
-    const QString ref = makeTransferRef(walletRef, "abcde");
+    const QString ref = makeTransferRef(walletRef, "abcdeabcdeabcde");
 
     auto *sess = new SimpleTransfer(m_wm, m_acct,
                                     ref, walletRef,

@@ -171,7 +171,7 @@ void Wallet::createNew(const QString &path,
             crypto::secret_key nullSkey{};
             {
                 QMutexLocker locker(&m_mutex);
-                m_wallet->generate(pathStr, passWipe, nullSkey, false, true, false);
+                m_wallet->generate(pathStr, passWipe, nullSkey, false, false, false);
                 m_wallet->set_seed_language(language.toStdString());
 
                 m_wallet->init(toString(m_daemonAddress),
@@ -391,15 +391,16 @@ void Wallet::getPrimarySeed()
             if (!m_wallet) throw std::runtime_error("wallet not loaded");
 
             QMutexLocker lock(&m_mutex);
-
+            const auto st = m_wallet->get_multisig_status();
             epee::wipeable_string words;
-            if (m_wallet->get_multisig_seed(words)) {
-                seed = QString::fromStdString(
-                    std::string(words.data(), words.size()));
-            } else if (m_wallet->is_deterministic() &&
-                       m_wallet->get_seed(words)) {
-                seed = QString::fromStdString(
-                    std::string(words.data(), words.size()));
+
+            if (st.multisig_is_active) {
+                if (st.is_ready && m_wallet->get_multisig_seed(words)) {
+                    seed = QString::fromStdString(std::string(words.data(), words.size()));
+                }
+            } else if (m_wallet->is_deterministic() && m_wallet->get_seed(words)) {
+                seed = QString::fromStdString(std::string(words.data(), words.size()));
+
             }
         }
         catch (const std::exception &e) {
@@ -746,8 +747,20 @@ void Wallet::seedMulti()
     enqueue(QStringLiteral("seedMulti"), [=]() {
         QString seed;
         try {
-            epee::wipeable_string words;
+
             QMutexLocker locker(&m_mutex);
+             const auto st = m_wallet->get_multisig_status();
+
+            if (!st.multisig_is_active) {
+                QMetaObject::invokeMethod(this, [=]() { emit seedMultiReady(QString()); },
+                                          Qt::QueuedConnection);
+                return;
+            }
+            if (!st.is_ready) {
+                throw std::runtime_error("This multisig wallet is not yet finalized");
+            }
+
+            epee::wipeable_string words;
             if (m_wallet->get_multisig_seed(words))
                 seed = QString::fromStdString(std::string(words.data(), words.size()));
         } catch (const std::exception &e) {
@@ -862,7 +875,8 @@ void Wallet::importMultisigInfos(const QList<QByteArray> &infos,QString operatio
             }, Qt::QueuedConnection);
         }
         catch (const std::exception &e) {
-            const QString msg = QString::fromUtf8(e.what());
+            const QString msg = QString::fromUtf8(e.what()) + " (peer multisig info import)";
+
             qDebug().noquote() << "[msig][ERROR]:" << e.what();
             QMetaObject::invokeMethod(this, [this, msg, operation_caller]() {
                 emit errorOccurred(msg, operation_caller);
@@ -981,7 +995,7 @@ void Wallet::importMultisigInfosBulk(const QList<QByteArray> &infos, QString ope
             }, Qt::QueuedConnection);
         }
         catch (const std::exception &e) {
-            const QString msg = QString::fromUtf8(e.what());
+            const QString msg = QString::fromUtf8(e.what()) + " (peer multisig info import)";
             qDebug().noquote() << "[msig][ERROR]:" << e.what();
             QMetaObject::invokeMethod(this, [this, msg, operation_caller]() {
                 emit errorOccurred(msg, operation_caller);

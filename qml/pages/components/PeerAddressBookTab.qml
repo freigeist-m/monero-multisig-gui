@@ -13,9 +13,14 @@ Item {
     property int editingIndex: -1
     property string originalOnion: ""
 
+    function normalizeOnion(o) {
+        var s = (o || "").trim().toLowerCase();
+        if (s !== "" && !s.endsWith(".onion")) s += ".onion";
+        return s;
+    }
 
-    function isValidOnion(addr) {
-        return /^[a-z0-9]{56}\.onion$/.test(String(addr).trim().toLowerCase());
+    function isValidOnion(a) {
+        return accountManager.isOnionAddress(normalizeOnion(a));
     }
 
     function isDuplicateOnion(addr) {

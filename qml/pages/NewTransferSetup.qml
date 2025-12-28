@@ -57,16 +57,7 @@ Page {
         }
     }
 
-    // function _validAddress(s) {
-    //     if (typeof s !== "string") return false
-    //     const cleaned = s.replace(/\s+/g,"")
-    //     const base58 = "[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]"
-    //     const re = new RegExp("^(?:4" + base58 + "{94}|8" + base58 + "{94}|4" + base58 + "{105})$")
-    //     return re.test(cleaned)
-    // }
 
-
-    // Build a map onion -> label from address book + trusted peers
     function _peerLabelsByOnion() {
         let out = {};
 
@@ -196,14 +187,13 @@ Page {
         peerError = ""
         balanceError = ""
 
-        if (userHasEditedPeers || strictMode) {
-            let selected = 0
-            for (let i=0;i<peerModel.count;i++)
-                if (peerModel.get(i).include) selected++
-            const thr = Number(walletMeta.threshold || 0)
-            if (selected < thr) {
-                peerError = qsTr("Select at least %1 peers (threshold)").arg(thr)
-            }
+        const thr = threshold()
+
+        if (thr > 0) {
+            const sel = selectedCount()
+            if (sel > thr) peerError = qsTr("Too many signing peers selected (max %1)").arg(thr)
+            else if ((userHasEditedPeers || strictMode) && sel !== thr)
+                peerError = qsTr("Select exactly %1 signing peer(s)").arg(thr)
         }
 
         if (strictMode) {
@@ -239,11 +229,6 @@ Page {
         return !addrError && !peerError && !balanceError && !feePickError
     }
 
-    function selectedPeers() {
-        let out=[]
-        for (let i=0;i<peerModel.count;i++) if (peerModel.get(i).include) out.push(peerModel.get(i).onion)
-        return out
-    }
 
     function destList() {
         let out=[]
@@ -266,6 +251,74 @@ Page {
         return false
     }
 
+    function threshold() { return Number(walletMeta.threshold || 0) }
+
+    function selectedCount() {
+        let c = 0
+        for (let i = 0; i < peerModel.count; ++i)
+            if (peerModel.get(i).include) c++
+        return c
+    }
+
+    function allMustSign() {
+        const thr = threshold()
+        return thr > 0 && peerModel.count > 0 && thr === peerModel.count
+    }
+
+    // The "selected block" is: index 0 (you) + other included peers after it.
+    // Return the last index that is included (contiguous from top).
+    function lastIncludedIndex() {
+        let last = -1
+        for (let i = 0; i < peerModel.count; ++i) {
+            if (peerModel.get(i).include) last = i
+            else break // contiguous block ends
+        }
+        return last
+    }
+
+    // Move a newly-selected peer into the selected block after current last included.
+    function moveIntoSelectedBlock(idx) {
+        const last = lastIncludedIndex()
+        const target = Math.max(1, last + 1) // never before index 1 (index 0 is you)
+        if (idx !== target) peerModel.move(idx, target, 1)
+    }
+
+    // Move a deselected peer below the selected block (to just after it)
+    function moveOutOfSelectedBlock(idx) {
+        const last = lastIncludedIndex()
+        const target = last + 1
+        if (idx !== target) peerModel.move(idx, target, 1)
+    }
+
+    // Up/down movement only within included block, never above "you".
+    function canMoveUp(idx) {
+        if (idx <= 1) return false
+        return peerModel.get(idx).include && peerModel.get(idx - 1).include
+    }
+    function canMoveDown(idx) {
+        if (idx < 1) return false
+        if (!peerModel.get(idx).include) return false
+        if (idx + 1 >= peerModel.count) return false
+        return peerModel.get(idx + 1).include
+    }
+    function moveUp(idx) {
+        if (!canMoveUp(idx)) return
+        peerModel.move(idx, idx - 1, 1)
+    }
+    function moveDown(idx) {
+        if (!canMoveDown(idx)) return
+        peerModel.move(idx, idx + 1, 1)
+    }
+
+    // This now returns ORDERED signers (because peerModel order is the signing order)
+    function selectedPeers() {
+        let out=[]
+        for (let i=0;i<peerModel.count;i++)
+            if (peerModel.get(i).include) out.push(peerModel.get(i).onion)
+        return out
+    }
+
+
     function startSession() {
         if (!validateInputs(true)) return
 
@@ -273,12 +326,13 @@ Page {
         if (deductFeeFromDests) {
             for (var i=0;i<feeDeductIdxs.length;i++) feeSplit.push(parseInt(feeDeductIdxs[i], 10))
         }
+        const order = selectedPeers()
 
         const ref = TransferManager.startOutgoingTransfer(
             walletMeta.reference,
             destList(),
-            selectedPeers(),
-            selectedPeers(),
+            order,
+            order,
             Number(walletMeta.threshold || 0),
             feePriority,
             feeSplit,
@@ -656,10 +710,30 @@ Page {
 
                                 AppCheckBox {
                                     checked: include
-                                    enabled: !own
-                                    onToggled: {
 
-                                        peerModel.setProperty(index, "include", checked)
+                                    enabled: !own
+                                             && !allMustSign()
+                                             && (include || selectedCount() < threshold())
+
+                                    onToggled: {
+                                        userHasEditedPeers = true
+                                        const thr = threshold()
+
+                                        if (checked) {
+                                            const lastBefore = lastIncludedIndex()
+
+                                            peerModel.setProperty(index, "include", true)
+
+                                            const target = Math.max(1, lastBefore + 1)
+                                            if (index !== target) peerModel.move(index, target, 1)
+
+                                        } else {
+                                            const lastBefore = lastIncludedIndex()
+                                            peerModel.setProperty(index, "include", false)
+
+                                            if (index < lastBefore) peerModel.move(index, lastBefore, 1)
+                                        }
+
                                         validateInputs(false)
                                     }
                                 }
@@ -683,6 +757,28 @@ Page {
                                         color: themeManager.textColor
                                         elide: Text.ElideMiddle
                                         verticalAlignment: Text.AlignVCenter
+                                    }
+                                }
+
+                                RowLayout {
+                                    spacing: 4
+                                    Layout.alignment: Qt.AlignVCenter
+
+                                    // no arrows for you (always first signer)
+                                    // only show for included peers (since order matters only for signers)
+                                    visible: include && !own && threshold() >= 3
+
+                                    AppIconButton {
+                                        iconSource: "/resources/icons/arrow-up.svg"
+                                        size: 14
+                                        enabled: canMoveUp(index)
+                                        onClicked: moveUp(index)
+                                    }
+                                    AppIconButton {
+                                        iconSource: "/resources/icons/arrow-down.svg"
+                                        size: 14
+                                        enabled: canMoveDown(index)
+                                        onClicked: moveDown(index)
                                     }
                                 }
                             }
@@ -778,6 +874,12 @@ Page {
             const p = peers[i]
             if (p === my) continue
             peerModel.append({ onion: p, include: false, own: false, label: labels[p] || "" })
+        }
+
+        const thr = threshold()
+        if (thr > 0 && thr === peerModel.count) {
+            for (let i = 0; i < peerModel.count; ++i)
+                peerModel.setProperty(i, "include", true)
         }
 
 

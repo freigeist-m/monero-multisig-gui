@@ -431,7 +431,7 @@ void TransferInitiator::importAllMultisigInfos()
             this, &TransferInitiator::onMultisigInfosImported,
             Qt::QueuedConnection);
 
-    w->importMultisigInfos(infos,m_transferRef);
+    w->importMultisigInfosBulk(infos,m_transferRef);
 }
 
 void TransferInitiator::onMultisigInfosImported(int nImported, bool needsRescan , QString operation_caller )
@@ -985,7 +985,9 @@ QString TransferInitiator::getTransferDetailsJson() const
                                    {"onion", p.onion}, {"online", p.online}, {"ready", p.ready},
                                    {"multisig_info_timestamp", QString::number(p.multisigInfoTs)},
                                    {"received_transfer", p.receivedTransfer},
-                                   {"signed", p.hasSigned}
+                                   {"signed", p.hasSigned},
+                                   {"stage_name", p.stageName},
+                                   {"status", p.status}
                                });
     }
 
@@ -996,6 +998,8 @@ QString TransferInitiator::getTransferDetailsJson() const
         {"my_onion", myOnionFQDN()},
         {"destinations", destinationsToJson(m_destinations)},
         {"peers", peers},
+        {"signing_order", QJsonArray::fromStringList(m_signingOrder)},
+        {"who_has_signed", QJsonArray::fromStringList(m_signatures)},
         {"threshold", m_threshold},
         {"stage", stageName(m_stage)},
         {"status", ""},

@@ -25,10 +25,12 @@ class MultiWalletController : public QObject
 
     Q_PROPERTY(int epoch READ epoch NOTIFY epochChanged)
 
+
 public:
     explicit MultiWalletController(AccountManager *am, TorBackend *tor = nullptr,
                                    QObject *parent = nullptr);
     ~MultiWalletController() override;
+    AccountManager* accountManager() const { return m_am; }
 
 
     QStringList walletNames() const { return m_walletNames; }
@@ -83,6 +85,8 @@ public:
     Q_INVOKABLE bool refOnionAvailable(const QString &reference,
                                        const QString &onion,
                                        const QString &excludingWallet = {}) const;
+
+    Q_INVOKABLE bool restoreWalletInPlaceUsingImport(const QString &walletName);
 
 
 
@@ -154,6 +158,10 @@ public slots:
                                   const QString &nettype =  "mainnet" );
     Q_INVOKABLE QStringList connectedWalletNames() const;
 
+    Q_INVOKABLE bool createStandardWallet(const QString &walletName,
+                                          const QString &password,
+                                          const QString &nettype);
+
 
 signals:
 
@@ -182,6 +190,11 @@ signals:
 
 
     void subaddressLookaheadSet(const QString &walletName, quint32 major, quint32 minor);
+
+    void restoreInPlaceStarted(const QString &walletName, const QString &backupName);
+    void restoreInPlaceFinished(const QString &walletName, bool success, const QString &message);
+
+    void standardWalletCreated(const QString &walletName);
 
 private:
 
@@ -219,6 +232,43 @@ private:
     TorBackend *m_tor = nullptr;
 
     int m_epoch = 0;
+
+    struct RestoreInPlaceJob {
+        QString originalName;
+        QString backupName;
+        Meta backupMeta;
+        QString originalReference;
+        QString backupReference;
+        bool waitingForParams = false;
+        bool completed = false;
+    };
+
+    struct StandardCreateJob {
+        QString password;
+        QString nettype;
+        quint64 restoreHeight = 0;
+
+        QString reference;
+        QString seed;
+        QString address;
+
+        bool gotSeed = false;
+        bool gotAddr = false;
+        bool done = false;
+    };
+
+    QHash<QString, RestoreInPlaceJob> m_restoreInPlaceJobs;
+
+
+    QHash<QString, StandardCreateJob> m_stdCreateJobs;
+
+    void maybeFinalizeStandardCreate(const QString &walletName);
+
+    QString makeUniqueBackupName(const QString &base) const;
+    QString randomSuffix(int len) const;
+
+    void rollbackRestoreInPlace(const QString &originalName, const QString &reason);
+    void maybeFinalizeRestoreInPlace(const QString &walletName);
 };
 
 Q_DECLARE_METATYPE(MultiWalletController*)

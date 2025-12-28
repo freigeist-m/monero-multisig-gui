@@ -12,6 +12,26 @@ Page {
         color: themeManager.backgroundColor
     }
 
+    property int autoRefreshSeconds: 30
+    property int secondsToNextRefresh: autoRefreshSeconds
+    property int secondsSinceRefresh: 0
+    property double lastRefreshTs: 0
+    property int refreshNonce: 0
+    property var transferRefs: []
+
+    function rebuildRefs() {
+        transferRefs = getAllTransferRefs()
+    }
+
+    function doRefresh(kind) {
+        transferManager.restoreAllSaved()
+        lastRefreshTs = Date.now() / 1000
+        secondsSinceRefresh = 0
+        secondsToNextRefresh = autoRefreshSeconds
+        refreshNonce++
+        rebuildRefs()
+    }
+
     function getAllTransferRefs() {
 
         let allRefs = new Set()
@@ -214,13 +234,18 @@ Page {
     }
 
     Timer {
-        id: refreshTimer
-        interval: 5000
+        id: uiTick
+        interval: 10000
         repeat: true
         running: root.visible
         onTriggered: {
+            if (lastRefreshTs > 0)
+                secondsSinceRefresh =  Math.floor(Date.now()/1000 - lastRefreshTs)
 
-            getAllTransferRefs()
+            secondsToNextRefresh = Math.max(0, secondsToNextRefresh - 1)
+
+            if (secondsSinceRefresh > autoRefreshSeconds)
+                doRefresh("auto")
         }
     }
 
@@ -244,8 +269,17 @@ Page {
             }
 
             Text {
-                text: qsTr("(%1 transfers)").arg(getAllTransferRefs().length)
+                text: qsTr("(%1 transfers)").arg(transferRefs.length)
                 font.pixelSize: 14
+                color: themeManager.textSecondaryColor
+            }
+
+            Text {
+                text: lastRefreshTs > 0
+                    ? qsTr("Refreshed %1s ago")
+                        .arg(secondsSinceRefresh)
+                    : qsTr("Not refreshed yet")
+                font.pixelSize: 11
                 color: themeManager.textSecondaryColor
             }
 
@@ -255,7 +289,7 @@ Page {
                 variant: "secondary"
                 implicitHeight: 28
                 onClicked: {
-                    transferManager.restoreAllSaved()
+                    onClicked: doRefresh("manual")
                 }
             }
         }
@@ -323,14 +357,17 @@ Page {
                     spacing: 6
 
                     Repeater {
-                        model: getAllTransferRefs()
+                        model: transferRefs
 
                         delegate: Rectangle {
                             Layout.fillWidth: true
                             height: contentColumn.implicitHeight + 20
 
                             property string transferRef: modelData
-                            property var summary: transferManager.getTransferSummary(transferRef)
+                            property var summary: {
+                                root.refreshNonce;
+                                return transferManager.getTransferSummary(transferRef)
+                            }
                             property bool isLive: isLiveSession(transferRef)
 
                             color: themeManager.backgroundColor
@@ -466,7 +503,7 @@ Page {
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignCenter
                     spacing: 12
-                    visible: getAllTransferRefs().length === 0
+                    visible: transferRefs.length === 0
 
                     AppIcon {
                         source: "/resources/icons/layers.svg"
@@ -495,12 +532,10 @@ Page {
     }
 
     Component.onCompleted: {
-        transferManager.restoreAllSaved()
+        doRefresh("initial")
     }
 
     onVisibleChanged: {
-        if (visible) {
-            transferManager.restoreAllSaved()
-        }
+        if (visible) doRefresh("visible")
     }
 }

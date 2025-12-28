@@ -22,6 +22,12 @@
 
 using namespace CryptoUtils;
 
+static inline QString normOnion(QString s) {
+    s = s.trimmed().toLower();
+    if (!s.isEmpty() && !s.endsWith(".onion")) s += ".onion";
+    return s;
+}
+
 namespace {
 
 
@@ -137,7 +143,7 @@ constexpr qint64 kMsigInfoMaxAgeSec = 120;
 constexpr int    kMaxHeaderBytes   = 32 * 1024;
 constexpr int    kMaxHeaderLines   = 200;
 constexpr qint64 kMaxBodyBytes     = 512 * 1024;
-constexpr int    kPerRequestTimeoutMs = 5000;
+constexpr int    kPerRequestTimeoutMs = 15000;
 
 }
 
@@ -346,7 +352,8 @@ bool MultisigApiRouter::handlePing(const QByteArray &method,const QByteArray &ra
         { QStringLiteral("m"),     s->m() },
         { QStringLiteral("n"),     s->n() },
         { QStringLiteral("nettype"), s->net_type() },
-        { QStringLiteral("stage"), MultisigSession::stageName(s->currentStage()) }
+        { QStringLiteral("stage"), MultisigSession::stageName(s->currentStage())},
+        { QStringLiteral("peers_sha256"), s->expectedPeersHashHex()  }
     };
 
     sendJson(sock,200,out); return true;
@@ -1066,8 +1073,22 @@ bool MultisigApiRouter::saveIncomingTransfer(const QString &walletRef,
     int idx=-1; QJsonObject wobj;
     for (int i=0;i<wallets.size();++i){
         QJsonObject o = wallets.at(i).toObject();
-        if (o.value("reference").toString()==walletRef || o.value("name").toString()==walletName) {
-            idx=i; wobj=o; break;
+
+        const QString wantOnion = normOnion(m_boundOnion);
+
+        for (int i=0;i<wallets.size();++i){
+            QJsonObject o = wallets.at(i).toObject();
+            const QString oName  = o.value("name").toString();
+            const QString oRef   = o.value("reference").toString();
+            const QString oOnion = normOnion(o.value("my_onion").toString());
+
+            bool match = false;
+
+            if (!walletRef.isEmpty() && oRef == walletRef && oOnion == wantOnion) {
+                match = true;
+            }
+
+            if (match) { idx=i; wobj=o; break; }
         }
     }
     if (idx<0) return false;
@@ -1161,12 +1182,25 @@ bool MultisigApiRouter::readSavedTransfer(const QString &walletRef,
 
     for (const QJsonValue &v : wallets) {
         const QJsonObject w = v.toObject();
-        if (w.value("reference").toString()!=walletRef && w.value("name").toString()!=walletNameForRefOnion(walletRef, m_boundOnion)) continue;
+        const QString wantName  = walletNameForRefOnion(walletRef, m_boundOnion);
+        const QString wantOnion = normOnion(m_boundOnion);
 
-        const QJsonObject transfers = w.value("transfers").toObject();
-        if (transfers.contains(transferRef)) {
-            *out = transfers.value(transferRef).toObject();
-            return true;
+        for (const QJsonValue &v : wallets) {
+            const QJsonObject w = v.toObject();
+            const QString wName  = w.value("name").toString();
+            const QString wRef   = w.value("reference").toString();
+            const QString wOnion = normOnion(w.value("my_onion").toString());
+
+            const bool matchByName = (!wantName.isEmpty() && wName == wantName);
+            const bool matchByRef  = (!walletRef.isEmpty() && wRef == walletRef && wOnion == wantOnion);
+
+            if (!matchByName && !matchByRef) continue;
+
+            const QJsonObject transfers = w.value("transfers").toObject();
+            if (transfers.contains(transferRef)) {
+                *out = transfers.value(transferRef).toObject();
+                return true;
+            }
         }
     }
     return false;

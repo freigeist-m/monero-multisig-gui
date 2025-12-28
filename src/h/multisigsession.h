@@ -64,6 +64,8 @@ public:
     Q_INVOKABLE int n() const { return m_n; }
     Q_INVOKABLE QString  net_type() const { return m_nettype; }
 
+    Q_INVOKABLE QString  expectedPeersHashHex() const { return m_expectedPeersHashHex; }
+
     Q_INVOKABLE QByteArray blobForStage(const QString &stage, int round) const;
     Q_INVOKABLE void onFirstKexMsg(QByteArray blob);
     Q_INVOKABLE void registerPeerPendingConfirmation(const QString &onion);
@@ -169,8 +171,11 @@ private:
         bool       pendingComplete   {false};
         QJsonObject details;
         bool       detailsMatch      {false};
+        QString     mismatchReason;
     };
     QHash<QString, PeerState> m_peers;
+    QStringList m_expectedPeers;
+    QString m_expectedPeersHashHex;
 
     QMap<int,QByteArray> m_kex;
     QByteArray           m_ack, m_pending;

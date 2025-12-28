@@ -264,31 +264,37 @@ Rectangle {
                 // }
 
 
-                // AppButton {
-                //     text: "Load Account File..."
-                //     variant: "secondary"
-                //     visible: !isCreatingAccount
-                //     Layout.fillWidth: true
-                //     implicitHeight: 28
-                //     onClicked: fileDialog.open()
-                // }
+                AppButton {
+                    text: "Choose Data Folder…"
+                    variant: "secondary"
+                    Layout.fillWidth: true
+                    implicitHeight: 28
+                    onClicked: dataFolderDialog.open()
+                }
             }
         }
     }
 
-    FileDialog {
-        id: fileDialog
-        title: "Select Account File"
-        nameFilters: ["Encrypted files (*.enc)", "All files (*)"]
+    FolderDialog {
+        id: dataFolderDialog
+        title: "Select where to store monero-multisig-gui-data"
         onAccepted: {
-            var filePath = selectedFile.toString().replace("file://", "")
-            var success = accountManager.login(filePath, passwordField.text)
-            if (!success && passwordField.text === "") {
-                errorAlert.text = "Please enter password first"
+            // selectedFolder is a url like "file:///home/user/..."
+            var p = selectedFolder.toString()
+            // let C++ handle file:// too, but removing here is fine
+            p = p.replace("file://", "")
+            var ok = accountManager.setDataRootParentDir(p)
+            if (!ok) {
+                // error will be raised via errorOccurred
+            } else {
+                errorAlert.variant = "success"
+                errorAlert.text = "Data folder set to:\n" + accountManager.dataRootPath
                 errorAlert.visible = true
+                accountCombo.refreshAccountList()
             }
         }
     }
+
 
     Connections {
         target: accountManager

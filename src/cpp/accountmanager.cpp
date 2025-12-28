@@ -14,21 +14,123 @@
 #include <QSaveFile>
 #include <QThread>
 #include <QDebug>
-
+#include <QDirIterator>
+#include <QCoreApplication>
+#ifdef Q_OS_LINUX
+#include <QtGlobal>
+#endif
 
 
 using namespace CryptoUtils;
 
+static bool dirHasEntries(const QString &p) {
+    QDir d(p);
+    if (!d.exists()) return false;
+    return !d.entryList(QDir::NoDotAndDotDot | QDir::AllEntries).isEmpty();
+}
+
+static bool copyDirRecursive(const QString &srcPath, const QString &dstPath)
+{
+    QDir src(srcPath);
+    if (!src.exists()) return false;
+
+    QDir().mkpath(dstPath);
+
+    QDirIterator it(srcPath,
+                    QDir::NoDotAndDotDot | QDir::AllEntries,
+                    QDirIterator::Subdirectories);
+
+    while (it.hasNext()) {
+        it.next();
+        const QFileInfo fi = it.fileInfo();
+
+        const QString rel = src.relativeFilePath(fi.absoluteFilePath());
+        const QString dstItem = QDir(dstPath).filePath(rel);
+
+        if (fi.isDir()) {
+            if (!QDir().mkpath(dstItem)) return false;
+        } else if (fi.isFile() || fi.isSymLink()) {
+
+            QDir().mkpath(QFileInfo(dstItem).absolutePath());
+
+            if (QFileInfo::exists(dstItem)) return false;
+
+            if (!QFile::copy(fi.absoluteFilePath(), dstItem)) return false;
+
+            QFile::setPermissions(dstItem, fi.permissions());
+        } else {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool moveDirRobust(const QString &srcPath, const QString &dstPath)
+{
+    if (!QFileInfo(srcPath).isDir()) return true;
+
+    if (dirHasEntries(dstPath)) return false;
+
+    if (QFileInfo(dstPath).exists()) {
+        QDir(dstPath).removeRecursively();
+    }
+    if (QDir().rename(srcPath, dstPath)) {
+        return true;
+    }
+
+    if (!copyDirRecursive(srcPath, dstPath)) {
+        QDir(dstPath).removeRecursively();
+        return false;
+    }
+
+    if (!QDir(srcPath).removeRecursively()) {
+        return false;
+    }
+
+    return true;
+}
+
+static QString portableRootDir()
+{
+#ifdef Q_OS_LINUX
+    const QByteArray appImagePath = qgetenv("APPIMAGE");
+    if (!appImagePath.isEmpty())
+        return QFileInfo(QString::fromLocal8Bit(appImagePath)).absolutePath();
+#endif
+
+    QFileInfo fi(QCoreApplication::applicationFilePath());
+
+    const QString canon = fi.canonicalFilePath();
+    if (!canon.isEmpty())
+        return QFileInfo(canon).absolutePath();
+
+    return fi.absolutePath();
+}
+
+
+static constexpr const char* kDataRootFolderName = "monero-multisig-gui-data";
+static constexpr const char* kConfigFileName     = "config.txt";
+static constexpr const char* kConfigKeyDataRoot  = "DATA_ROOT=";
 
 AccountManager::AccountManager(QObject *parent) : QObject(parent)
 {
 
-    QDir().mkpath("accounts");
+    QString cfgRoot;
+    const bool hasCfg = loadDataRootFromConfig(&cfgRoot) && !cfgRoot.trimmed().isEmpty();
+
+    if (hasCfg) {
+        m_dataRoot = cfgRoot.trimmed();
+        ensureDataDirs();
+    } else {
+        m_dataRoot = defaultDataRoot();
+        migrateFromLegacyExeDirs();
+        ensureDataDirs();
+    }
 }
 
 AccountManager::~AccountManager()
 {
-
     logout();
 }
 
@@ -40,11 +142,7 @@ QString AccountManager::prettyJson(const QJsonObject &obj) const
 
 bool AccountManager::isOnionAddress(const QString &url) const
 {
-    static const QRegularExpression re(QStringLiteral("^[a-z0-9]{56}\\.onion$"),
-                                       QRegularExpression::CaseInsensitiveOption);
-    const bool ok = re.match(url.trimmed()).hasMatch();
-    // if (!url.isEmpty())  qDebug() << "[AccountManager] isOnionAddress(" << url << ") ->" << ok;
-    return ok;
+    return CryptoUtils::isValidOnionV3(url);
 }
 
 bool AccountManager::validateDaemonUrl(const QString &url) const
@@ -448,9 +546,9 @@ bool AccountManager::createAccount(const QString &accountName,
             return false;
         }
 
-        QDir().mkpath(QStringLiteral("wallets/") + safe + QStringLiteral("/multisig_info"));
+        QDir().mkpath(QDir(walletsDir()).filePath(safe + "/multisig_info"));
+        const QString path = QDir(accountsDir()).filePath(safe + ".enc");
 
-        const QString path = QStringLiteral("accounts/") + safe + QStringLiteral(".enc");
         if (QFileInfo::exists(path)) {
 
             emit errorOccurred(tr("Account '%1' already exists").arg(safe));
@@ -475,7 +573,7 @@ bool AccountManager::createAccount(const QString &accountName,
                              {"daemon_port",   18081},
                              {"use_tor_for_daemon", false},
                              {"dark_mode",     true},
-                             {"tor_autoconnect", false},
+                             {"tor_autoconnect", true},
                              {"lock_timeout_minutes", 30},
                              {"network_type",  "mainnet"}
                          }}
@@ -555,7 +653,7 @@ bool AccountManager::saveAccountData(const QString &content)
 QVariantList AccountManager::getAvailableAccounts()
 {
     QVariantList out;
-    QDir dir(QStringLiteral("accounts"));
+    QDir dir(accountsDir());
     dir.setNameFilters(QStringList{QStringLiteral("*.enc")});
     for (const QFileInfo &fi : dir.entryInfoList()) {
         out << QVariantMap{
@@ -1647,5 +1745,209 @@ bool AccountManager::removeDaemonAddressBookEntry(const QString &url, int port)
     return true;
 }
 
+QString AccountManager::dataRoot() const
+{
+    return m_dataRoot.isEmpty() ? defaultDataRoot() : m_dataRoot;
+}
+
+QString AccountManager::accountsDir() const
+{
+    return QDir(dataRoot()).filePath("accounts");
+}
+
+QString AccountManager::walletsDir() const
+{
+    return QDir(dataRoot()).filePath("wallets");
+}
+
+void AccountManager::ensureDataDirs()
+{
+    const QString root = dataRoot();
+    if (!QDir().mkpath(root)) {
+        qWarning() << "[AccountManager] Could not create data root:" << root;
+        emit errorOccurred(tr("Cannot create data folder next to the executable:\n%1").arg(root));
+        return;
+    }
+
+    QDir().mkpath(accountsDir());
+    QDir().mkpath(walletsDir());
+}
+
+void AccountManager::migrateLegacyDirsIfNeeded()
+{
+    const QString exeDir = QCoreApplication::applicationDirPath();
+    const QString legacyAccounts = QDir(exeDir).filePath("accounts");
+    const QString legacyWallets  = QDir(exeDir).filePath("wallets");
+
+    const QString newAccounts = accountsDir();
+    const QString newWallets  = walletsDir();
+
+    if (QFileInfo(legacyAccounts).isDir() && !dirHasEntries(newAccounts)) {
+        if (!moveDirRobust(legacyAccounts, newAccounts)) {
+            qWarning() << "[AccountManager] Failed to migrate legacy accounts dir:"
+                       << legacyAccounts << "->" << newAccounts;
+        }
+    }
+
+    if (QFileInfo(legacyWallets).isDir() && !dirHasEntries(newWallets)) {
+        if (!moveDirRobust(legacyWallets, newWallets)) {
+            qWarning() << "[AccountManager] Failed to migrate legacy wallets dir:"
+                       << legacyWallets << "->" << newWallets;
+        }
+    }
+}
 
 
+QString AccountManager::walletAccountDir() const {
+    const QString acct = currentAccount();
+    if (acct.isEmpty()) return {};
+    return QDir(walletsDir()).filePath(acct);
+}
+
+QString AccountManager::walletPath(const QString &walletName) const {
+    return QDir(walletAccountDir()).filePath(walletName);
+}
+QString AccountManager::multisigInfoDir() const {
+    return QDir(walletAccountDir()).filePath("multisig_info");
+}
+
+bool AccountManager::setDataRootParentDir(const QString &parentDirOrDataDir)
+{
+    const QString newRoot = ensureDataRootName(parentDirOrDataDir);
+    if (newRoot.isEmpty()) {
+        emit errorOccurred(tr("Invalid folder selection"));
+        return false;
+    }
+
+    if (!QDir().mkpath(newRoot)) {
+        emit errorOccurred(tr("Cannot create data folder:\n%1").arg(newRoot));
+        return false;
+    }
+    QDir().mkpath(QDir(newRoot).filePath("accounts"));
+    QDir().mkpath(QDir(newRoot).filePath("wallets"));
+
+    m_dataRoot = QDir(newRoot).absolutePath();
+    ensureDataDirs();
+
+    if (!saveDataRootToConfig(m_dataRoot)) {
+        emit errorOccurred(tr("Warning: could not save config. The folder will reset next launch."));
+    }
+
+    emit dataRootPathChanged();
+    return true;
+}
+
+bool AccountManager::resetDataRootToDefault()
+{
+    m_dataRoot = defaultDataRoot();
+    ensureDataDirs();
+
+    (void)saveDataRootToConfig(m_dataRoot);
+    emit dataRootPathChanged();
+    return true;
+}
+
+QString AccountManager::defaultDataRoot()
+{
+    const QString root = portableRootDir();
+    return QDir(root).filePath(QString::fromLatin1(kDataRootFolderName));
+}
+
+QString AccountManager::ensureDataRootName(const QString &parentDirOrDataDir)
+{
+    QString base = parentDirOrDataDir.trimmed();
+    if (base.isEmpty()) return {};
+
+    QFileInfo fi(base);
+    // accept "file:///..." from QML too
+    if (base.startsWith("file://", Qt::CaseInsensitive))
+        base = QUrl(base).toLocalFile();
+
+    if (QFileInfo(base).fileName().compare(kDataRootFolderName, Qt::CaseInsensitive) == 0) {
+        return QDir(base).absolutePath();
+    }
+
+    return QDir(base).filePath(QString::fromLatin1(kDataRootFolderName));
+}
+
+QString AccountManager::configFilePath() const
+{
+    QString base = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    if (base.isEmpty()) base = QDir::homePath(); // last resort
+    QDir().mkpath(base);
+    return QDir(base).filePath(QString::fromLatin1(kConfigFileName));
+}
+
+bool AccountManager::loadDataRootFromConfig(QString *out) const
+{
+    if (!out) return false;
+    const QString path = configFilePath();
+
+    QFile f(path);
+    if (!f.exists()) return false;
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
+
+    const QByteArray all = f.readAll();
+    f.close();
+
+    // very simple format: DATA_ROOT=/abs/path/to/monero-multisig-gui-data
+    const QList<QByteArray> lines = all.split('\n');
+    for (QByteArray line : lines) {
+        line = line.trimmed();
+        if (line.startsWith(kConfigKeyDataRoot)) {
+            const QByteArray val = line.mid(int(strlen(kConfigKeyDataRoot))).trimmed();
+            QString p = QString::fromUtf8(val);
+
+            // expand ~ if user edited manually
+            if (p.startsWith("~/")) p = QDir::home().filePath(p.mid(2));
+
+            if (!p.isEmpty()) {
+                *out = QDir(p).absolutePath();
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool AccountManager::saveDataRootToConfig(const QString &dataRoot) const
+{
+    const QString path = configFilePath();
+
+    QSaveFile sf(path);
+    if (!sf.open(QIODevice::WriteOnly | QIODevice::Text)) return false;
+
+    const QByteArray line = QByteArray(kConfigKeyDataRoot) + dataRoot.toUtf8() + "\n";
+    sf.write(line);
+    return sf.commit();
+}
+
+QString AccountManager::dataRootPath() const
+{
+    return dataRoot();
+}
+
+bool AccountManager::migrateFromLegacyExeDirs()
+{
+    const QString exeDir = portableRootDir();
+    const QString legacyAccounts = QDir(exeDir).filePath("accounts");
+    const QString legacyWallets  = QDir(exeDir).filePath("wallets");
+
+    const QString newAccounts = accountsDir();
+    const QString newWallets  = walletsDir();
+
+    bool any = false;
+
+    if (QFileInfo(legacyAccounts).isDir() && !dirHasEntries(newAccounts)) {
+        if (moveDirRobust(legacyAccounts, newAccounts)) any = true;
+        else qWarning() << "[AccountManager] Failed to migrate legacy accounts dir:"
+                       << legacyAccounts << "->" << newAccounts;
+    }
+
+    if (QFileInfo(legacyWallets).isDir() && !dirHasEntries(newWallets)) {
+        if (moveDirRobust(legacyWallets, newWallets)) any = true;
+        else qWarning() << "[AccountManager] Failed to migrate legacy wallets dir:"
+                       << legacyWallets << "->" << newWallets;
+    }
+    return any;
+}

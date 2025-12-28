@@ -104,21 +104,46 @@ Page {
             totalAmountXmr = (totalA + _feeXmr) /1e12
             peersModel.clear()
             if (o.peers) {
-                const labels = _peerLabelsByOnion();
-                for (const k in o.peers) {
-                    const p = o.peers[k]
-                    if (isSelfPeer(k, my)) {
-                        continue
-                    }
+                const labels = _peerLabelsByOnion()
+                const my = normOnion(o.my_onion || "")
+                const order = signingOrderFrom(o)
+                const pmap = peersMapByNorm(o.peers)
+
+                // Populate in signing order
+                for (let i = 0; i < order.length; ++i) {
+                    const on = order[i]
+                    if (isSelfPeer(on, my)) continue  // keep your current behavior (no "you" row)
+                    const p = pmap[on]
+                    if (!p) continue
+
                     peersModel.append({
-                        onion: k,
-                        label: labels[k] || "",
+                        onion: on,
+                        label: labels[on] || "",
+                        orderPos: i + 1,
                         online: !!p.online,
                         ready: !!p.ready,
                         received: !!p.received_transfer,
                         signed: !!p.signed,
                         ts: p.multisig_info_timestamp || ""
                     })
+                }
+
+                // Fallback if order was empty for some reason
+                if (order.length === 0) {
+                    for (let k in pmap) {
+                        if (isSelfPeer(k, my)) continue
+                        const p = pmap[k]
+                        peersModel.append({
+                            onion: k,
+                            label: labels[k] || "",
+                            orderPos: 0,
+                            online: !!p.online,
+                            ready: !!p.ready,
+                            received: !!p.received_transfer,
+                            signed: !!p.signed,
+                            ts: p.multisig_info_timestamp || ""
+                        })
+                    }
                 }
             }
 
@@ -128,6 +153,32 @@ Page {
         } catch(e) { /* ignore */ }
 
 
+    }
+
+    function signingOrderFrom(o) {
+        let order = []
+
+        // Most important: explicit signing order from backend
+        if (o && Array.isArray(o.signing_order) && o.signing_order.length)
+            order = o.signing_order
+        // Some of your saved snapshots nest data under transfer_description
+        else if (o && o.transfer_description && Array.isArray(o.transfer_description.signing_order) && o.transfer_description.signing_order.length)
+            order = o.transfer_description.signing_order
+        // Fallback (NOT ideal, but deterministic enough if backend didn't store order)
+        else if (o && o.peers)
+            order = Object.keys(o.peers)
+
+        return (order || []).map(normOnion)
+    }
+
+    function peersMapByNorm(peersObj) {
+        const m = {}
+        if (!peersObj) return m
+        for (let k in peersObj) {
+            const nk = normOnion(k)
+            m[nk] = peersObj[k]
+        }
+        return m
     }
 
     function refreshOnce() {

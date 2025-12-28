@@ -23,6 +23,33 @@ Page {
         color: themeManager.backgroundColor
     }
 
+    function signingOrderFrom(o) {
+        let order = []
+
+        // Most important: explicit signing order from backend
+        if (o && Array.isArray(o.signing_order) && o.signing_order.length)
+            order = o.signing_order
+        // Some of your saved snapshots nest data under transfer_description
+        else if (o && o.transfer_description && Array.isArray(o.transfer_description.signing_order) && o.transfer_description.signing_order.length)
+            order = o.transfer_description.signing_order
+        // Fallback (NOT ideal, but deterministic enough if backend didn't store order)
+        else if (o && o.peers)
+            order = Object.keys(o.peers)
+
+        return (order || []).map(normOnion)
+    }
+
+    function peersMapByNorm(peersObj) {
+        const m = {}
+        if (!peersObj) return m
+        for (let k in peersObj) {
+            const nk = normOnion(k)
+            m[nk] = peersObj[k]
+        }
+        return m
+    }
+
+
     // Build onion -> label map from Address Book + Trusted Peers
     function _peerLabelsByOnion() {
         let out = {};
@@ -150,37 +177,42 @@ Page {
             totalAmountXmr = (totalA +feeXmr) /1e12
 
             peersModel.clear()
+            const labels = _peerLabelsByOnion()
             const myOnion = myOnionForSession
-            const labels = _peerLabelsByOnion();
 
-            if (o.peers) {
-                for (let k in o.peers) {
-                    const p = o.peers[k]
+            const order = signingOrderFrom(o)
+            const pmap  = peersMapByNorm(o.peers)
 
+            for (let i = 0; i < order.length; ++i) {
+                const on = order[i]
+                const p = pmap[on]
+                if (!p) continue
 
-                    if (Array.isArray(p)) {
-                        peersModel.append({
-                            onion:k,
-                            label: labels[k] || "",
-                            stage: p[0] || "UNKNOWN",
-                            received: !!p[1],
-                            signed: !!p[2],
-                            status: p[3],
-                            isOwn: isSelfPeer(k, myOnion)
-                        })
-                    } else {
-                        peersModel.append({
-                            onion:k,
-                            label: labels[k] || "",
-                            stage: p.stage || "UNKNOWN",
-                            received: !!(p.ready || p.received || p.received_transfer),
-                            signed: !!p.signed,
-                            status: "",
-                            isOwn: isSelfPeer(k, myOnion)
-                        })
-                    }
+                if (Array.isArray(p)) {
+                    peersModel.append({
+                        onion: on,
+                        label: labels[on] || "",
+                        stage: p[0] || "UNKNOWN",
+                        received: !!p[1],
+                        signed: !!p[2],
+                        status: p[3],
+                        isOwn: isSelfPeer(on, myOnion),
+                        orderPos: i + 1
+                    })
+                } else {
+                    peersModel.append({
+                        onion: on,
+                        label: labels[on] || "",
+                        stage: p.stage || "UNKNOWN",
+                        received: !!(p.ready || p.received || p.received_transfer),
+                        signed: !!p.signed,
+                        status: p.status || "",
+                        isOwn: isSelfPeer(on, myOnion),
+                        orderPos: i + 1
+                    })
                 }
             }
+
         } catch (e) {
             console.warn("[IncomingPage] parse error:", e)
         }

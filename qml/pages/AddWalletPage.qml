@@ -30,6 +30,53 @@ Page {
 
     ListModel { id: peerInputModel }
     ListModel { id: addressBookModel }
+    function _peerLabelsByOnion() {
+        let out = {}
+
+        if (accountManager && accountManager.is_authenticated) {
+            // Address book
+            const ab = accountManager.getAddressBook() || []
+            for (let i = 0; i < ab.length; ++i) {
+                const it = ab[i]
+                const on = normalizeOnion(String(it.onion || ""))
+                const lb = String(it.label || "")
+                if (on && lb) out[on] = lb
+            }
+
+            // Trusted peers (JSON string)
+            try {
+                const tp = JSON.parse(accountManager.getTrustedPeers() || "{}")
+                for (const onRaw in tp) {
+                    if (!tp.hasOwnProperty(onRaw)) continue
+                    const on = normalizeOnion(String(onRaw || ""))
+                    const lb = String((tp[onRaw] && tp[onRaw].label) || "")
+                    if (on && lb) out[on] = lb
+                }
+            } catch (e) {
+                console.log("Could not parse trusted peers JSON:", e)
+            }
+        }
+
+        return out
+    }
+
+    function refreshPeerLabels() {
+        const labels = _peerLabelsByOnion()
+        for (let i = 0; i < peerInputModel.count; ++i) {
+            const row = peerInputModel.get(i)
+            const on = normalizeOnion(String(row.onion || ""))
+            const lb = labels[on] || ""
+            if ((row.label || "") !== lb) peerInputModel.setProperty(i, "label", lb)
+        }
+    }
+
+    function setPeerLabelForIndex(idx) {
+        if (idx < 0 || idx >= peerInputModel.count) return
+        const labels = _peerLabelsByOnion()
+        const on = normalizeOnion(String(peerInputModel.get(idx).onion || ""))
+        peerInputModel.setProperty(idx, "label", labels[on] || "")
+    }
+
 
     function normalizeOnion(o) {
         var s = (o || "").trim().toLowerCase();
@@ -45,6 +92,8 @@ Page {
             const it = raw[i];
             addressBookModel.append({ label: String(it.label), onion: String(it.onion) });
         }
+
+        refreshPeerLabels()
     }
 
     function loadUserOnions() {
@@ -73,7 +122,7 @@ Page {
     }
 
     function isValidOnion(addr) {
-        return /^[a-z0-9]{56}\.onion$/.test(addr.toLowerCase());
+        return accountManager.isOnionAddress(normalizeOnion(addr));
     }
 
     function randomString(len) {
@@ -249,6 +298,10 @@ Page {
         onItemSelected: function(item, index) {
             if (selectedPeerIndex >= 0 && selectedPeerIndex < peerInputModel.count) {
                 peerInputModel.setProperty(selectedPeerIndex, "onion", item.onion)
+
+                const labels = _peerLabelsByOnion()
+                peerInputModel.setProperty(selectedPeerIndex, "label", labels[on] || String(item.label || ""))
+                validatePeers()
             }
         }
 
@@ -463,7 +516,7 @@ Page {
                             AppButton {
                                 text: qsTr("Add Peer")
                                 variant: "secondary"
-                                onClicked: peerInputModel.append({onion: ""})
+                                onClicked: peerInputModel.append({onion: "", label: "" })
                             }
                         }
 
@@ -482,8 +535,20 @@ Page {
                                     font.pixelSize: 10
                                     onTextChanged: {
                                         peerInputModel.setProperty(index, "onion", text);
+                                        setPeerLabelForIndex(index)
                                         validatePeers();
                                     }
+                                }
+
+                                Item { Layout.fillWidth: true }
+
+                                Text {
+                                    text: (model.label && model.label.length) ? ("(" + model.label + ")") : ""
+                                    visible: model.label && model.label.length
+                                    font.pixelSize: 10
+                                    color: themeManager.textSecondaryColor
+                                    elide: Text.ElideRight
+                                    // Layout.preferredWidth: 140
                                 }
 
                                 AppIconButton {
@@ -819,7 +884,7 @@ Page {
     }
 
     Component.onCompleted: {
-        peerInputModel.append({onion: ""});
+        peerInputModel.append({onion: "",label: "" });
         loadAddressBook();
         loadUserOnions();
     }

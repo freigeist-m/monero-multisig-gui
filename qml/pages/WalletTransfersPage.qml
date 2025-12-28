@@ -16,6 +16,43 @@ Page {
         color: themeManager.backgroundColor
     }
 
+
+    readonly property int tickSeconds: 10
+    readonly property int autoRefreshSeconds: 30
+
+    property int secondsSinceRefresh: 0
+    property int secondsUntilAutoRefresh: autoRefreshSeconds
+    property double lastRefreshMs: 0
+
+    function fmtAgo(sec) {
+        if (sec <= 0) return qsTr("just now")
+        if (sec < 60) return qsTr("%1s ago").arg(sec)
+        const m = Math.floor(sec / 60)
+        return qsTr("%1m ago").arg(m)
+    }
+
+    function fmtIn(sec) {
+        if (sec <= 0) return qsTr("now")
+        if (sec < 60) return qsTr("in %1s").arg(sec)
+        const m = Math.ceil(sec / 60)
+        return qsTr("in %1m").arg(m)
+    }
+
+    function doRefresh(reason) {
+        if (!wallet) return
+
+
+        if (wallet.busy) return
+
+        WalletManager.refreshWallet(walletName)
+
+        wallet.getTransfers()
+
+        secondsUntilAutoRefresh = autoRefreshSeconds
+
+        secondsSinceRefresh = 0
+    }
+
     function atomicToXMR(a) { return (Number(a) / 1e12).toFixed(12) }
     function fmtDate(ts) { if (!ts) return ""; return new Date(ts * 1000).toLocaleString() }
 
@@ -60,15 +97,36 @@ Page {
 
     Component.onCompleted: {
         wallet = WalletManager.walletInstance(walletName)
-        if (wallet) wallet.getTransfers()
+        if (wallet) {
+            wallet.getTransfers()
+            secondsSinceRefresh = 0
+            secondsUntilAutoRefresh = autoRefreshSeconds
+        }
     }
 
     Connections {
         target: WalletManager
         function onEpochChanged() {
             wallet = WalletManager.walletInstance(walletName)
+            if (root.visible && wallet) wallet.getTransfers()
         }
     }
+
+    Timer {
+        id: tickTimer
+        interval: tickSeconds * 1000
+        repeat: true
+        running: root.visible
+        onTriggered: {
+            secondsSinceRefresh += tickSeconds
+            secondsUntilAutoRefresh = Math.max(0, secondsUntilAutoRefresh - tickSeconds)
+
+            if (secondsUntilAutoRefresh <= 0) {
+                doRefresh("auto")
+            }
+        }
+    }
+
 
     ColumnLayout {
         anchors.fill: parent
@@ -131,13 +189,30 @@ Page {
 
             Item { Layout.fillWidth: true }
 
-            AppButton {
-                text: qsTr("Refresh")
-                iconSource: "/resources/icons/refresh.svg"
-                variant: "secondary"
-                implicitHeight: 28
-                enabled: wallet && !wallet.busy
-                onClicked: if (wallet) wallet.getTransfers()
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.bottomMargin: 8
+                spacing: 12
+                Text {
+                    // feedback: refreshed X ago • next refresh in Y
+                    visible: wallet !== null
+                    text: wallet && wallet.busy
+                          ? qsTr("Refreshing…")
+                          : qsTr("Refreshed %1")
+                    .arg(fmtAgo(secondsSinceRefresh))
+
+                    color: themeManager.textSecondaryColor
+                    font.pixelSize: 10
+                }
+
+                AppButton {
+                    text: qsTr("Refresh")
+                    iconSource: "/resources/icons/refresh.svg"
+                    variant: "secondary"
+                    implicitHeight: 28
+                    enabled: wallet && !wallet.busy
+                    onClicked: doRefresh("manual")
+                }
             }
         }
 
@@ -185,13 +260,21 @@ Page {
 
             Text {
                 id: status
-                text: wallet ? (wallet.busy ? qsTr("Loading…") : qsTr("%1 transfers").arg(transferModel.count)) : qsTr("Wallet not connected")
+                text: wallet
+                      ? (wallet.busy
+                         ? qsTr("Loading…")
+                         : qsTr("%1 transfers").arg(transferModel.count))
+                      : qsTr("Wallet not connected")
                 color: wallet && wallet.busy ? themeManager.textSecondaryColor : themeManager.textColor
                 font.pixelSize: 10
             }
 
+
+
             Item { Layout.fillWidth: true }
         }
+
+
     }
 
     Component {

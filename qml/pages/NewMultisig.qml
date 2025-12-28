@@ -29,6 +29,7 @@ Page {
     property string userOnionError: ""
     property int selectedPeerIndex: -1
     property string selectedUserOnion: ""
+    property bool attemptedStart: false
 
     property var notifySelection: ({})
     property bool notifierStarted: false
@@ -39,6 +40,23 @@ Page {
     ListModel { id: addressBookModel }
     ListModel { id: userOnionModel }
 
+    function autoSelectSingleUserOnion() {
+        if (sessionActive) return;
+        if (selectedUserOnion && selectedUserOnion !== "") return;
+
+        if (userOnionModel.count !== 1) return;
+
+        const only = userOnionModel.get(0);
+        const onion = normalizeOnion(only.onion);
+
+        if (!isValidOnion(onion)) return;
+
+        selectedUserOnion = onion;
+        validateUserOnion();
+        if (refField.text.trim().length > 0)
+            validateReference();
+    }
+
     function normalizeOnion(o) {
         var s = (o || "").trim().toLowerCase();
         if (s !== "" && !s.endsWith(".onion")) s += ".onion";
@@ -48,13 +66,13 @@ Page {
     function validateReference() {
         const r = refField.text.trim();
         if (r.length === 0) {
-            referenceError = qsTr("Reference code cannot be empty");
-            return false;
+            referenceError = attemptedStart ? qsTr("Reference code cannot be empty") : "";
+            return !attemptedStart;
         }
 
         if (selectedUserOnion === "") {
-            referenceError = qsTr("Select your onion identity first");
-            return false;
+            referenceError = attemptedStart ? qsTr("Select your onion identity first") : "";
+            return !attemptedStart;
         }
 
         const on = normalizeOnion(selectedUserOnion);
@@ -104,7 +122,7 @@ Page {
     }
 
     function isValidOnion(a) {
-        return /^[a-z0-9]{56}\.onion$/.test(a.toLowerCase());
+        return accountManager.isOnionAddress(normalizeOnion(a));
     }
 
     function loadAddressBook() {
@@ -124,11 +142,13 @@ Page {
         for (let i = 0; i < identities.length; ++i) {
             const identity = identities[i];
             userOnionModel.append({
-                label: String(identity.label),
-                onion: String(identity.onion),
-                online: !!identity.online
-            });
+                                      label: String(identity.label),
+                                      onion: String(identity.onion),
+                                      online: !!identity.online
+                                  });
         }
+
+        autoSelectSingleUserOnion();
     }
 
     function refreshPeerModel() {
@@ -136,17 +156,35 @@ Page {
         if (!sessionObj) return;
 
         const peers = sessionObj.peerList;
+
+        var bad = [];
+
         for (let i = 0; i < peers.length; ++i) {
             const p = peers[i];
             const key = String(p.onion).trim().toLowerCase();
             if (notifySelection[key] === undefined) notifySelection[key] = true;
+
+            const match = !!p.detailsMatch;
+            const mismatch = String(p.mismatch || "");
+
             peerModel.append({
-                onion: key,
-                online: !!p.online,
-                pstage: String(p.pstage),
-                notify: !!notifySelection[key]
-            });
+                                 onion: key,
+                                 online: !!p.online,
+                                 pstage: String(p.pstage),
+                                 detailsMatch: match,
+                                 mismatch: mismatch,
+                                 notify: !!notifySelection[key]
+                             });
+
+            if (p.online && !match) {
+                bad.push(key + (mismatch ? (": " + mismatch) : ""));
+            }
         }
+
+        if (bad.length > 0) {
+            peerValidationError = qsTr("Peer details mismatch:\n") + bad.join("\n");
+        }
+
     }
 
     function selectedNotifyPeers() {
@@ -181,9 +219,9 @@ Page {
         ignoreUnknownSignals: true
         function onStageChanged(s) { stageLabel.text = s
 
-        if (s === 'COMPLETE'){
-            redirectTimer.start()
-        }
+            if (s === 'COMPLETE'){
+                redirectTimer.start()
+            }
 
         }
         function onPeerStatusChanged() { refreshPeerModel() }
@@ -256,7 +294,7 @@ Page {
                             Layout.alignment: Qt.AlignHCenter
                             placeholderText: "Enter unique reference code"
                             iconSource: "/resources/icons/hashtag.svg"
-                            onTextChanged: validateReference()
+                            // onTextChanged: validateReference()
                             errorText: referenceError
                         }
 
@@ -266,7 +304,7 @@ Page {
                             Layout.alignment: Qt.AlignHCenter
                             placeholderText: "Enter wallet name"
                             iconSource: "/resources/icons/wallet.svg"
-                            onTextChanged: validateWalletName()
+                            // onTextChanged: validateWalletName()
                             errorText: walletNameError
                         }
 
@@ -499,6 +537,8 @@ Page {
                         implicitHeight: 36
                         onClicked: {
 
+                            attemptedStart = true;
+
                             let validationErrors = [];
 
                             if (!validateUserOnion()) {
@@ -573,15 +613,15 @@ Page {
                             }
 
                             sessionRef = multisigManager.startMultisig(
-                                refField.text.trim(),
-                                parseInt(thresholdField.text) || 2,
-                                peers.length + 1,
-                                peers,
-                                walletNameField.text.trim(),
-                                walletPasswordField.text,
-                                selectedUserOnion,
-                                "user"
-                            );
+                                        refField.text.trim(),
+                                        parseInt(thresholdField.text) || 2,
+                                        peers.length + 1,
+                                        peers,
+                                        walletNameField.text.trim(),
+                                        walletPasswordField.text,
+                                        selectedUserOnion,
+                                        "user"
+                                        );
 
                             notifierStarted = false;
                             notifierMessage = "";
@@ -596,8 +636,8 @@ Page {
                                 const res = multisigManager.startMultisigNotifier(sessionRef, notifyPeers,selectedUserOnion);
                                 notifierStarted = (res && res.length > 0);
                                 notifierMessage = notifierStarted
-                                    ? qsTr("Notifier started in background.")
-                                    : qsTr("Could not start notifier.");
+                                        ? qsTr("Notifier started in background.")
+                                        : qsTr("Could not start notifier.");
                             }
                         }
                     }
@@ -719,6 +759,14 @@ Page {
                             }
                         }
 
+                        AppAlert {
+                            Layout.fillWidth: true
+                            visible: peerValidationError !== ""
+                            variant: "error"
+                            closable: true
+                            text: peerValidationError
+                        }
+
                         Rectangle {
                             Layout.fillWidth: true
                             height: 1
@@ -756,7 +804,18 @@ Page {
                                             source: "/resources/icons/shield-network.svg"
                                             width: 12
                                             height: 12
-                                            color: model.online ? themeManager.successColor : themeManager.textSecondaryColor
+                                            color: (model.online && model.detailsMatch)
+                                                   ? themeManager.successColor
+                                                   : (model.online && !model.detailsMatch)
+                                                     ? themeManager.errorColor
+                                                     : themeManager.textSecondaryColor
+                                        }
+
+                                        Text {
+                                            visible: model.online && !model.detailsMatch
+                                            text: qsTr("mismatch")
+                                            color: themeManager.errorColor
+                                            font.pixelSize: 10
                                         }
 
                                         Text {

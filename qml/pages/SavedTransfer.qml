@@ -11,6 +11,7 @@ Page {
     property string transferRef: ""
     property var    snapshot: ({})
     property real   totalAmountXmr: 0.0
+    property string myOnionForSession: ""
 
     ListModel { id: recipientsModel }
     ListModel { id: peersModel }
@@ -18,6 +19,63 @@ Page {
     background: Rectangle {
         color: themeManager.backgroundColor
     }
+
+    function resolveMyOnionForSession(o) {
+        let ours = []
+        try {
+            if (accountManager && accountManager.torOnions)
+                ours = accountManager.torOnions() || []
+        } catch(e) { /* ignore */ }
+
+        if ((!ours || !ours.length) && torServer && torServer.onionAddress)
+            ours = [ torServer.onionAddress ]
+
+        ours = (ours || []).map(normOnion)
+
+        let order = []
+        if (o && Array.isArray(o.signing_order) && o.signing_order.length)
+            order = o.signing_order
+        else if (o && o.transfer_description && Array.isArray(o.transfer_description.signing_order) && o.transfer_description.signing_order.length)
+            order = o.transfer_description.signing_order
+        else if (o && o.peers)
+            order = Object.keys(o.peers)
+
+        order = (order || []).map(normOnion)
+
+        let chosen = ""
+        for (let p of order) { if (ours.indexOf(p) !== -1) { chosen = p; break } }
+        if (!chosen && ours && ours.length === 1) chosen = normOnion(ours[0])
+
+        myOnionForSession = chosen
+    }
+
+    function signingOrderFrom(o) {
+        let order = []
+
+        // Most important: explicit signing order from backend
+        if (o && Array.isArray(o.signing_order) && o.signing_order.length)
+            order = o.signing_order
+        // Some of your saved snapshots nest data under transfer_description
+        else if (o && o.transfer_description && Array.isArray(o.transfer_description.signing_order) && o.transfer_description.signing_order.length)
+            order = o.transfer_description.signing_order
+        // Fallback (NOT ideal, but deterministic enough if backend didn't store order)
+        else if (o && o.peers)
+            order = Object.keys(o.peers)
+
+        return (order || []).map(normOnion)
+    }
+
+    function peersMapByNorm(peersObj) {
+        const m = {}
+        if (!peersObj) return m
+        for (let k in peersObj) {
+            const nk = normOnion(k)
+            m[nk] = peersObj[k]
+        }
+        return m
+    }
+
+
 
     function normOnion(s) {
         if (!s) return ""
@@ -57,6 +115,12 @@ Page {
         return normOnion(peerOnion) === myOnion
     }
 
+    function pickMyOnion(o) {
+        if (o && o.my_onion) return normOnion(o.my_onion)
+        if (o && o.transfer_description && o.transfer_description.my_onion) return normOnion(o.transfer_description.my_onion)
+        return ""
+    }
+
     function parseSnapshot() {
         try {
             let o = JSON.parse(TransferManager.getSavedTransferDetails(transferRef) || "{}")
@@ -93,20 +157,51 @@ Page {
             snapshot = o
 
             peersModel.clear()
-            const myOnion = normOnion(torServer.onionAddress || "")
+            const fromSnap = pickMyOnion(o)   // if you added pickMyOnion()
+            if (fromSnap) myOnionForSession = fromSnap
+            else resolveMyOnionForSession(o)
+
+            const myOnion = myOnionForSession
             const labels  = _peerLabelsByOnion()
-            for (let k in o.peers) {
-                let p = o.peers[k]
+
+            const order = signingOrderFrom(o)
+            const pmap  = peersMapByNorm(o.peers)
+
+            for (let i = 0; i < order.length; ++i) {
+                const on = order[i]
+                const p = pmap[on]
+                if (!p) continue
+
+                // your saved format is array: [stage, received, signed, status]
                 peersModel.append({
-                    onion: k,
-                    label:   labels[k] || "",
+                    onion: on,
+                    label: labels[on] || "",
                     stage: p[0],
                     received: p[1],
                     signed: p[2],
                     status: p[3] || "",
-                    isOwn: isSelfPeer(k, myOnion)
+                    isOwn: isSelfPeer(on, myOnion),
+                    orderPos: i + 1
                 })
             }
+
+            // fallback if no explicit order exists
+            if (order.length === 0) {
+                for (let on in pmap) {
+                    const p = pmap[on]
+                    peersModel.append({
+                        onion: on,
+                        label: labels[on] || "",
+                        stage: p[0],
+                        received: p[1],
+                        signed: p[2],
+                        status: p[3] || "",
+                        isOwn: isSelfPeer(on, myOnion),
+                        orderPos: 0
+                    })
+                }
+            }
+
         } catch(e) {
             console.warn("SavedTransfer parse error:", e)
         }

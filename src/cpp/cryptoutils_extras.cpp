@@ -64,6 +64,47 @@ static QByteArray base32Lower(const QByteArray &in)
     return out;
 }
 #endif
+
+static const char *B32_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567";
+
+bool base32DecodeRfc4648Lower(const QString &s, QByteArray &out)
+{
+    int len = s.size();
+    if (len == 0) return false;
+
+    // For v3 onions: 56 chars -> 35 bytes -> bitsLeft=0 at end
+    int buffer = 0;
+    int bitsLeft = 0;
+
+    out.clear();
+    out.reserve((len * 5) / 8 + 1);
+
+    for (QChar qc : s) {
+        const QChar c = qc.toLower();
+        const char ch = c.toLatin1();
+
+        const char *p = std::strchr(B32_ALPHABET, ch);
+        if (!p) return false; // invalid character
+
+        int val = int(p - B32_ALPHABET); // 0..31
+
+        buffer = (buffer << 5) | val;
+        bitsLeft += 5;
+
+        while (bitsLeft >= 8) {
+            bitsLeft -= 8;
+            unsigned char byte = (buffer >> bitsLeft) & 0xFF;
+            out.append(char(byte));
+        }
+    }
+
+    // For well-formed 56-char onion addresses, this *must* be 0
+    if (bitsLeft != 0)
+        return false;
+
+    return true;
+}
+
 }
 
 
@@ -170,4 +211,38 @@ QByteArray CryptoUtils::ed25519Sign(const QByteArray &msg,
     memcpy(sig.data(), R, 32);
     memcpy(sig.data() + 32, S, 32);
     return sig;
+}
+
+
+bool CryptoUtils::isValidOnionV3(const QString &addr)
+{
+    QString s = addr.trimmed().toLower();
+    if (!s.endsWith(".onion"))
+        return false;
+
+    s.chop(6); // strip ".onion"
+
+    if (s.size() != 56)
+        return false;
+
+    QByteArray decoded;
+    if (!base32DecodeRfc4648Lower(s, decoded))
+        return false;
+
+    if (decoded.size() != 35)
+        return false;
+
+    const QByteArray pub   = decoded.left(32);
+    const QByteArray csum  = decoded.mid(32, 2);
+    const quint8     ver   = static_cast<quint8>(decoded[34]);
+
+    if (ver != OnionVer) // must be 0x03
+        return false;
+
+    QByteArray chkInput = OnionPrefix + pub + QByteArray(1, char(ver));
+    QByteArray expected = QCryptographicHash::hash(chkInput,
+                                                   QCryptographicHash::Sha3_256)
+                              .left(2);
+
+    return csum == expected;
 }

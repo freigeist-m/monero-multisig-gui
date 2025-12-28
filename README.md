@@ -304,7 +304,7 @@ The output executable will be in your Qt Creator build directory (e.g., `build-.
 
 ### 3) Bundle for Distribution
 
-From the repository root, run the bundling script:
+From the repository root, run the bundling scriptfrom the MSYS2 MinGW x64 shell:
 
 ```bash
 cd scripts

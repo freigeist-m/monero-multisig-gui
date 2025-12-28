@@ -35,9 +35,9 @@ QString opKey(const char *op, int round) {
 
 QByteArray infosHash(const QList<QByteArray> &infos) {
     QCryptographicHash h(QCryptographicHash::Sha256);
-    for (const QString &s : infos) {
-        h.addData(s.toUtf8());
-        h.addData("\n", 1);
+    for (const QByteArray &b : infos) {
+        h.addData(QByteArrayView{b});
+        h.addData(QByteArrayView{"\n", 1});
     }
     return h.result();
 }
@@ -153,6 +153,24 @@ MultisigSession::MultisigSession(MultiWalletController *wm,
 
     for (const QString &o : peerOnions)
         m_peers[o.toLower()] = PeerState{o.toLower()};
+
+    QStringList expectedPeers = m_peers.keys();
+    if (!m_myOnion.isEmpty())
+        expectedPeers << m_myOnion;
+
+    for (auto &s : expectedPeers) s = s.trimmed().toLower();
+    expectedPeers.removeDuplicates();
+    std::sort(expectedPeers.begin(), expectedPeers.end());
+
+    m_expectedPeers = expectedPeers;
+
+    QCryptographicHash h(QCryptographicHash::Sha256);
+    for (const auto &s : expectedPeers) {
+        const QByteArray utf8 = s.toUtf8();
+        h.addData(QByteArrayView{utf8});
+        h.addData(QByteArrayView{"\n", 1});
+    }
+    m_expectedPeersHashHex = QString::fromLatin1(h.result().toHex());
 
 
     m_ping.setInterval(PING_MS);
@@ -402,10 +420,32 @@ void MultisigSession::onHttp(QString onion, QString path,
         p.online   = true;
         p.lastSeen = QDateTime::currentSecsSinceEpoch();
         p.details  = res;
-        p.detailsMatch = (p.details["ref"].toString() == m_ref &&
-                          p.details["m"].toInt()      == m_m   &&
-                          p.details["n"].toInt()      == m_n) &&
-                          p.details["nettype"].toString() == m_nettype ;
+        QStringList why;
+
+        const QString gotRef     = p.details.value("ref").toString();
+        const int     gotM       = p.details.value("m").toInt();
+        const int     gotN       = p.details.value("n").toInt();
+        const QString gotNettype = p.details.value("nettype").toString();
+        const QString gotPeersHash = p.details.value("peers_sha256").toString();
+
+        if (gotRef != m_ref)
+            why << QStringLiteral("ref mismatch (got %1)").arg(gotRef);
+
+        if (gotM != m_m)
+            why << QStringLiteral("threshold mismatch (got %1)").arg(gotM);
+
+        if (gotN != m_n)
+            why << QStringLiteral("total participants mismatch (got %1)").arg(gotN);
+
+        if (gotNettype != m_nettype)
+            why << QStringLiteral("nettype mismatch (got %1)").arg(gotNettype);
+
+        if (gotPeersHash.isEmpty() || gotPeersHash != m_expectedPeersHashHex)
+            why << QStringLiteral("peer set mismatch");
+
+        p.detailsMatch = why.isEmpty();
+
+        p.mismatchReason = why.join(QStringLiteral(", "));
         emit peerStatusChanged(m_myOnion, m_ref);
         if (m_stage == Stage::WAIT_PEERS) checkStageCompletion();
         return;
@@ -858,7 +898,9 @@ QVariant MultisigSession::peerList() const
         out << QVariantMap{
             { "onion",  it.key() },
             { "online", p.online },
-            { "pstage", stageText }
+            { "pstage", stageText },
+            { "detailsMatch", p.detailsMatch },
+            { "mismatch",     p.mismatchReason }
         };
     }
     return out;

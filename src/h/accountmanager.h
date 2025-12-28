@@ -13,6 +13,8 @@
 #include <QJsonArray>
 #include <memory>
 #include "cryptoutils.h"
+#include <QStandardPaths>
+
 
 
 class AccountManager : public QObject
@@ -31,6 +33,7 @@ class AccountManager : public QObject
     Q_PROPERTY(bool    tor_autoconnect       READ torAutoconnect    NOTIFY settingsChanged)
     Q_PROPERTY(int     lock_timeout_minutes  READ lockTimeoutMinutes NOTIFY settingsChanged)
     Q_PROPERTY(QString  networkType          READ networkType       NOTIFY settingsChanged)
+    Q_PROPERTY(QString dataRootPath READ dataRootPath NOTIFY dataRootPathChanged)
 
 public:
     explicit AccountManager(QObject *parent = nullptr);
@@ -64,6 +67,14 @@ public:
     Q_INVOKABLE bool darkModePref() const;
     Q_INVOKABLE bool setDarkModePref(bool dark);
 
+    Q_INVOKABLE QString walletAccountDir() const;
+    Q_INVOKABLE QString walletPath(const QString &walletName) const;
+    Q_INVOKABLE QString multisigInfoDir() const;
+
+    Q_INVOKABLE QString dataRootPath() const;
+    Q_INVOKABLE bool setDataRootParentDir(const QString &parentDirOrDataDir);
+    Q_INVOKABLE bool resetDataRootToDefault();
+
 
     void storeTorIdentity(const QString &onion,
                           const QString &priv,
@@ -74,6 +85,12 @@ public:
     QString  torOnion()  const;
     QString  torPrivKey() const;
     void     storeTorPair(const QString &onion, const QString &priv);
+
+    void migrateLegacyDirsIfNeeded();
+    QString dataRoot() const;
+    QString accountsDir() const;
+    QString walletsDir() const;
+    void ensureDataDirs();
 
 
 public slots:
@@ -126,6 +143,8 @@ public slots:
     Q_INVOKABLE bool removeDaemonAddressBookEntry(const QString &url,
                                                   int port);
 
+    Q_INVOKABLE bool isOnionAddress(const QString &url) const;
+
 signals:
 
     void loginSuccess(const QString &accountName);
@@ -161,11 +180,11 @@ signals:
 
 
     void torIdentitiesChanged();
+    void dataRootPathChanged();
 
 private:
 
     bool passwordIsCorrect(const QString &password) const;
-    bool isOnionAddress(const QString &url) const;
     bool validateDaemonUrl(const QString &url) const;
     void loadSettingsFromJson(const QJsonObject &obj);
     QVariantMap sanitizeTrustedPeers(const QVariantMap &raw) const;
@@ -198,6 +217,17 @@ private:
     QString m_networkType = QStringLiteral("mainnet");
 
     QVariantMap m_trustedPeers;
+
+    QString m_dataRoot;
+
+    static QString defaultDataRoot();
+    static QString ensureDataRootName(const QString &parentDirOrDataDir);
+
+    QString configFilePath() const;
+    bool loadDataRootFromConfig(QString *out) const;
+    bool saveDataRootToConfig(const QString &dataRoot) const;
+
+    bool migrateFromLegacyExeDirs();          // ./accounts ./wallets -> current root
 
 
 

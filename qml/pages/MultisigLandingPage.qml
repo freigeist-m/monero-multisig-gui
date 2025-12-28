@@ -43,6 +43,14 @@ Page {
                 }
 
                 AppButton {
+                    text: qsTr("New Standard Wallet")
+                    iconSource: "/resources/icons/add-circle.svg"
+                    variant: "secondary"
+                    visible: hasAnySessions
+                    onClicked: leftPanel.buttonClicked("NewStandardWallet")
+                }
+
+                AppButton {
                     text: qsTr("New Notifier")
                     iconSource: "/resources/icons/bell.svg"
                     variant: "secondary"
@@ -304,6 +312,13 @@ Page {
                         iconSource: "/resources/icons/bell.svg"
                         variant: "secondary"
                         onClicked: leftPanel.buttonClicked("NotifierSetup")
+                    }
+
+                    AppButton {
+                        text: qsTr("Standard Wallet")
+                        iconSource: "/resources/icons/add-circle.svg"
+                        variant: "secondary"
+                        onClicked: leftPanel.buttonClicked("NewStandardWallet")
                     }
                 }
             }

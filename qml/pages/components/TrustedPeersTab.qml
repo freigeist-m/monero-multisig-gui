@@ -101,8 +101,14 @@ Item {
         return out;
     }
 
-    function isValidOnion(addr) {
-        return /^[a-z0-9]{56}\.onion$/.test(addr.toLowerCase());
+    function normalizeOnion(o) {
+        var s = (o || "").trim().toLowerCase();
+        if (s !== "" && !s.endsWith(".onion")) s += ".onion";
+        return s;
+    }
+
+    function isValidOnion(a) {
+        return accountManager.isOnionAddress(normalizeOnion(a));
     }
 
     function isDuplicateOnion(addr) {

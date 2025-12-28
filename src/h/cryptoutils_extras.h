@@ -45,4 +45,6 @@ inline bool       split_v3_blob(const QString &b,QByteArray &s,QByteArray &p,QBy
 inline QByteArray ed25519_sign(const QByteArray &m,const QByteArray &s,const QByteArray &p){ return ed25519Sign(m,s,p); }
 inline QByteArray onion_from_pub(const QByteArray &pub){ return onionFromPub(pub); }
 
+bool isValidOnionV3(const QString &addr);
+
 }

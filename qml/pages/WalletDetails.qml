@@ -16,12 +16,71 @@ Page {
     property var userOnionModel: ListModel {}
     property string selectedOwnedOnion: ""
 
+    property int selectedPeerIndex: -1
+    ListModel { id: addressBookModel }
+
     background: Rectangle {
         color: themeManager.backgroundColor
     }
 
-    function isOnion(s) {
-        return /^[a-z0-9]{56}\.onion$/.test(String(s || "").trim().toLowerCase())
+    function loadAddressBook() {
+        addressBookModel.clear();
+        if (!accountManager || !accountManager.is_authenticated) return;
+        const raw = accountManager.getAddressBook();
+        for (let i = 0; i < raw.length; ++i) {
+            const it = raw[i];
+            addressBookModel.append({ label: String(it.label), onion: String(it.onion) });
+        }
+    }
+
+    function _peerLabelsByOnion() {
+        let out = {};
+
+        if (accountManager && accountManager.is_authenticated) {
+            const ab = accountManager.getAddressBook() || [];
+            for (let i = 0; i < ab.length; ++i) {
+                const it = ab[i];
+                const on = normalizeOnion(String(it.onion || ""));
+                const lb = String(it.label || "");
+                if (on && lb) out[on] = lb;
+            }
+
+            try {
+                const tp = JSON.parse(accountManager.getTrustedPeers() || "{}");
+                for (const onRaw in tp) {
+                    if (!tp.hasOwnProperty(onRaw)) continue;
+                    const on = normalizeOnion(String(onRaw || ""));
+                    const lb = String((tp[onRaw] && tp[onRaw].label) || "");
+                    if (on && lb) out[on] = lb;
+                }
+            } catch (e) {
+                console.log("Could not parse trusted peers JSON:", e);
+            }
+        }
+
+        return out;
+    }
+
+    function refreshPeerLabels() {
+        const labels = _peerLabelsByOnion();
+        for (let i = 0; i < peersModel.count; ++i) {
+            const row = peersModel.get(i);
+            const on = normalizeOnion(row.onion || "");
+            const lb = labels[on] || "";
+            if ((row.label || "") !== lb) peersModel.setProperty(i, "label", lb);
+        }
+    }
+
+
+    function normalizeOnion(o) {
+        var s = (o || "").trim().toLowerCase();
+        if (s !== "" && !s.endsWith(".onion")) s += ".onion";
+        return s;
+    }
+
+
+    function isValidOnion(a) {
+        return accountManager.isOnionAddress(normalizeOnion(a));
     }
 
     function isWalletConnected() {
@@ -37,10 +96,18 @@ Page {
         if (!meta) meta = {}
 
         peersModel.clear()
-        const p = meta.peers || []
-        if (p.length === 0) peersModel.append({ onion: "" })
-        else p.forEach(o => peersModel.append({ onion: String(o) }))
+        const labels = _peerLabelsByOnion();
+        const p = meta.peers || [];
 
+        peersModel.clear();
+        if (p.length === 0) {
+            peersModel.append({ onion: "", label: "" });
+        } else {
+            p.forEach(o => {
+                const on = normalizeOnion(String(o));
+                peersModel.append({ onion: on, label: labels[on] || "" });
+            });
+        }
         onlineSwitch.checked = !!meta.online
 
         addressField.text = meta.address || ""
@@ -49,6 +116,7 @@ Page {
         myOnionField.text = meta.my_onion || ""
 
         editingPeers = false
+        refreshPeerLabels();
     }
 
     function loadOwnedOnions() {
@@ -450,7 +518,9 @@ Page {
 
                             AppInput {
                                 Layout.fillWidth: true
-                                text: onion
+                                text: editingPeers
+                                      ? onion
+                                      : (label && label.length ? (onion + " (" + label + ")") : onion)
                                 readOnly: !editingPeers
                                 placeholderText: qsTr("Peer onion address")
                                 font.family: "Monospace"
@@ -459,6 +529,17 @@ Page {
                                     if (editingPeers) {
                                         peersModel.setProperty(index, "onion", text.trim())
                                     }
+                                }
+                            }
+
+                            AppIconButton {
+                                iconSource: "/resources/icons/book-bookmark.svg"
+                                size: 16
+                                visible: editingPeers
+                                onClicked: {
+                                    selectedPeerIndex = index
+                                    loadAddressBook()
+                                    addressDialog.open()
                                 }
                             }
 
@@ -501,7 +582,7 @@ Page {
                                 for (let i = 0; i < peersModel.count; ++i) {
                                     const v = peersModel.get(i).onion.trim()
                                     if (v.length === 0) continue
-                                    if (!isOnion(v)) {
+                                    if (!isValidOnion(v)) {
                                         peerErr.text = qsTr("Invalid onion: %1").arg(v)
                                         return
                                     }
@@ -657,6 +738,38 @@ Page {
                     Layout.topMargin: 8
                     spacing: 8
 
+
+
+
+
+                    Text {
+                        text: qsTr("Backup wallet and auto-restore from seed.")
+                        color: themeManager.textSecondaryColor
+                        font.pixelSize: 12
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+
+                    AppButton {
+                        text: qsTr("Restore from Seed")
+                        variant: "warning"
+                        Layout.alignment: Qt.AlignLeft
+                        enabled: !isWalletConnected() && ((meta.seed || "").length > 0)
+
+                        onClicked: restoreInPlaceDialog.open()
+
+                        ToolTip.visible: hovered && !enabled
+                        ToolTip.text: isWalletConnected()
+                                      ? qsTr("Disconnect wallet to restore from seed")
+                                      : qsTr("Seed not available for this wallet")
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        color: themeManager.borderColor
+                    }
+
                     Text {
                         text: qsTr("Permanently delete this wallet from your account. This action cannot be undone.")
                         color: themeManager.textSecondaryColor
@@ -669,7 +782,14 @@ Page {
                         text: qsTr("Delete Wallet")
                         variant: "error"
                         Layout.alignment: Qt.AlignLeft
+                        enabled: !isWalletConnected()
                         onClicked: deleteWalletDialog.open()
+
+                        ToolTip.visible: hovered && !enabled
+                        ToolTip.text: isWalletConnected()
+                                      ? qsTr("Disconnect wallet to delete") : "Delete"
+
+
                     }
                 }
             }
@@ -914,7 +1034,7 @@ Page {
         onItemSelected: function(item, index) {
             const sel = String(item.onion || "").toLowerCase()
             if (sel === String(meta.my_onion || "").toLowerCase()) return
-            if (!isOnion(sel)) return
+            if (!isValidOnion(sel)) return
 
             const curRef = String(meta.reference || "").trim()
             if (curRef.length) {
@@ -937,6 +1057,76 @@ Page {
         }
     }
 
+    AppFormDialog {
+        id: restoreInPlaceDialog
+        titleText: qsTr("Restore Wallet from Seed (Repair)")
+        confirmButtonText: qsTr("Start Restore")
+        confirmEnabled: understandCheck.checked
+        errorText: restoreInPlaceError.text
+
+        content: [
+            Text {
+                text: qsTr("This will repair the wallet by restoring it from the stored seed.\n\n"
+                           + "What will happen:\n"
+                           + "1) Your current wallet will be backed up under a new name.\n"
+                           + "2) The wallet will be restored from seed using the same wallet name and password.\n"
+                           + "Important: The wallet must be disconnected.")
+                color: themeManager.textColor
+                font.pixelSize: 12
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            },
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                CheckBox { id: understandCheck }
+                Text {
+                    text: qsTr("I understand and want to continue")
+                    color: themeManager.textColor
+                    font.pixelSize: 12
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+            },
+
+            AppAlert {
+                id: restoreInPlaceError
+                variant: "error"
+                visible: text !== ""
+                Layout.fillWidth: true
+            }
+        ]
+
+        onOpened: {
+            understandCheck.checked = false
+            restoreInPlaceError.text = ""
+        }
+
+        onAccepted: {
+            if (isWalletConnected()) {
+                restoreInPlaceError.text = qsTr("Disconnect wallet first")
+                restoreInPlaceDialog.open()
+                return
+            }
+
+            const ok = WalletManager.restoreWalletInPlaceUsingImport(page.walletName)
+            if (!ok) {
+                restoreInPlaceError.text = qsTr("Could not start restore")
+                restoreInPlaceDialog.open()
+                return
+            }
+
+            // close dialog and show a status banner
+            restoreInPlaceDialog.close()
+            generalAlert.variant = "warning"
+            generalAlert.text = qsTr("Restore started. Please wait…")
+            generalAlert.visible = true
+        }
+    }
+
+
 
     Connections {
         target: WalletManager
@@ -954,7 +1144,55 @@ Page {
         }
 
         function onWalletsChanged() { refresh() }
+
+        function onRestoreInPlaceStarted(name, backupName) {
+            if (name !== page.walletName) return
+            generalAlert.variant = "warning"
+            generalAlert.text = qsTr("Creating backup '%1' and restoring wallet…").arg(backupName)
+            generalAlert.visible = true
+        }
+
+        function onRestoreInPlaceFinished(name, success, message) {
+            if (name !== page.walletName) return
+            generalAlert.variant = success ? "success" : "error"
+            generalAlert.text = message
+            generalAlert.visible = true
+            refresh()
+        }
+
     }
+
+    AppAddressBookDialog {
+        id: addressDialog
+        titleText: qsTr("Select Peer Address")
+        descriptionText: qsTr("Choose a peer address from your address book")
+        model: addressBookModel
+        addressBookType: "peer"
+        primaryField: "label"
+        secondaryField: "onion"
+        emptyStateText: qsTr("No peer addresses in your address book yet.")
+
+        onItemSelected: function(item, index) {
+            if (selectedPeerIndex >= 0 && selectedPeerIndex < peersModel.count) {
+                const on = normalizeOnion(item.onion)
+                peersModel.setProperty(selectedPeerIndex, "onion", on)
+
+                // update label immediately
+                const labels = _peerLabelsByOnion()
+                peersModel.setProperty(selectedPeerIndex, "label", labels[on] || "")
+            }
+        }
+
+        onQuickAddRequested: function() {
+            const tabMap = { "peer": 0, "trusted": 1, "xmr": 2, "daemon": 3 }
+            const tabIndex = tabMap[addressDialog.addressBookType] || 0
+
+            var pageComponent = Qt.resolvedUrl("UnifiedAddressBook.qml")
+            middlePanel.currentPageUrl = pageComponent
+            middlePanel.stackView.replace(pageComponent, { currentTab: tabIndex })
+        }
+    }
+
 
     Connections {
         target: accountManager
@@ -963,6 +1201,6 @@ Page {
 
     Component.onCompleted:{
         loadOwnedOnions();
-
+        loadAddressBook();
         refresh()}
 }

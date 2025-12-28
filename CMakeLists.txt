@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(monero-multisig-gui VERSION 0.1.1 LANGUAGES CXX)
+project(monero-multisig-gui VERSION 0.1.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -188,6 +188,7 @@ qt_add_qml_module(appmonero-multisig-gui
         SOURCES src/h/restore_height.h
         SOURCES src/h/win_compat.h
         QML_FILES qml/pages/ArchivedWalletsPage.qml
+        QML_FILES qml/pages/NewStandardWallet.qml
 )
 
 file(GLOB_RECURSE ICON_FILES "resources/icons/*.svg")

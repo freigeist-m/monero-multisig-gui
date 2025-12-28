@@ -20,6 +20,67 @@ Page {
         color: themeManager.backgroundColor
     }
 
+    property string myOnionForSession: ""
+
+    function resolveMyOnionForSession(o) {
+        let ours = []
+        try {
+            if (accountManager && accountManager.torOnions)
+                ours = accountManager.torOnions() || []
+        } catch(e) { /* ignore */ }
+        if ((!ours || !ours.length) && torServer && torServer.onionAddress)
+            ours = [ torServer.onionAddress ]
+        ours = (ours || []).map(normOnion)
+
+        let order = []
+        if (o && Array.isArray(o.signing_order) && o.signing_order.length)
+            order = o.signing_order
+        else if (o && o.transfer_description && Array.isArray(o.transfer_description.signing_order) && o.transfer_description.signing_order.length)
+            order = o.transfer_description.signing_order
+        else if (o && o.peers)
+            order = Object.keys(o.peers)
+        order = (order || []).map(normOnion)
+
+        let chosen = ""
+        for (let p of order) { if (ours.indexOf(p) !== -1) { chosen = p; break } }
+        if (!chosen && ours && ours.length === 1) chosen = normOnion(ours[0])
+
+        myOnionForSession = chosen
+    }
+
+    function isSelfPeer(peerOnion, myOnion) {
+        if (!myOnion) return false
+        return normOnion(peerOnion) === myOnion
+    }
+
+
+    function signingOrderFrom(o) {
+        let order = []
+
+        // Most important: explicit signing order from backend
+        if (o && Array.isArray(o.signing_order) && o.signing_order.length)
+            order = o.signing_order
+        // Some of your saved snapshots nest data under transfer_description
+        else if (o && o.transfer_description && Array.isArray(o.transfer_description.signing_order) && o.transfer_description.signing_order.length)
+            order = o.transfer_description.signing_order
+        // Fallback (NOT ideal, but deterministic enough if backend didn't store order)
+        else if (o && o.peers)
+            order = Object.keys(o.peers)
+
+        return (order || []).map(normOnion)
+    }
+
+    function peersMapByNorm(peersObj) {
+        const m = {}
+        if (!peersObj) return m
+        for (let k in peersObj) {
+            const nk = normOnion(k)
+            m[nk] = peersObj[k]
+        }
+        return m
+    }
+
+
     // Normalize onions to lowercase + ".onion"
     function normOnion(s) {
         if (!s) return ""
@@ -94,33 +155,43 @@ Page {
             o.unlock_time = unlock_time
 
             snapshot = o
+            resolveMyOnionForSession(o)
             peersModel.clear()
             if (o.peers) {
-                const labels = _peerLabelsByOnion();
-                for (let k in o.peers) {
-                    let p = o.peers[k]
+                const labels = _peerLabelsByOnion()
+                const order = signingOrderFrom(o)
+                const pmap  = peersMapByNorm(o.peers)
+
+                for (let i = 0; i < order.length; ++i) {
+                    const on = order[i]
+                    const p = pmap[on]
+                    if (!p) continue
+
                     if (Array.isArray(p)) {
                         peersModel.append({
-                            onion: k,
-                            label:   labels[k] || "",
+                            onion: on,
+                            label: labels[on] || "",
                             stage: p[0] || "",
-                            received: p[1] || false,
-                            signed: p[2] || false,
+                            received: !!p[1],
+                            signed: !!p[2],
                             status: p[3] || "",
-
+                            isOwn: isSelfPeer(on, myOnion),
+                            orderPos: i + 1
                         })
                     } else {
                         peersModel.append({
-                            onion: k,
-                            label:   labels[k] || "",
-                            stage: p[0] || "",
-                            received: p.ready || p.received || false,
-                            signed: p.signed || false,
-                            status: p.status ||"",
+                            onion: on,
+                            label: labels[on] || "",
+                            stage: p.stage || "",
+                            received: !!(p.ready || p.received),
+                            signed: !!p.signed,
+                            status: p.status || "",
+                            orderPos: i + 1
                         })
                     }
                 }
             }
+
         } catch(e) {
             console.warn("Error parsing snapshot:", e)
         }
@@ -168,7 +239,10 @@ Page {
 
         function onFinished(tref, result) {
             refreshTimer.running = false
-            leftPanel.buttonClicked("SessionsOverview")
+            const url = Qt.resolvedUrl("SavedTransfer.qml")
+            leftPanel.currentPageUrl =  url
+            middlePanel.currentPageUrl = url
+            middlePanel.stackView.replace(url, { transferRef: root.transferRef })
         }
     }
 
@@ -219,7 +293,8 @@ Page {
                         const ok = TransferManager.stopTracker(root.transferRef)
                         if (ok) {
                             refreshTimer.running = false
-                            leftPanel.buttonClicked("SessionsOverview")
+
+                            // leftPanel.buttonClicked("SessionsOverview")
                         }
                     }
                 }
@@ -635,7 +710,7 @@ Page {
                                         source: "/resources/icons/shield-network.svg"
                                         width: 12
                                         height: 12
-                                        color:  themeManager.textSecondaryColor
+                                        color: isOwn ? themeManager.primaryColor : themeManager.textSecondaryColor
                                     }
 
                                     ColumnLayout {
@@ -643,7 +718,9 @@ Page {
                                         spacing: 2
 
                                         Text {
-                                            text: (label && label.length) ? (onion + " (" + label + ")") : onion
+                                            text: isOwn
+                                                  ? (onion + qsTr(" (you)"))
+                                                  : ((label && label.length) ? (onion + " (" + label + ")") : onion)
                                             Layout.fillWidth: true
                                             elide: Text.ElideMiddle
                                             font.family: "Monospace"

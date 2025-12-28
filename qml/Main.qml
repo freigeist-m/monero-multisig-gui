@@ -185,6 +185,7 @@ ApplicationWindow {
                     }
                 }
 
+
                 Text {
                     text: "Screen Locked"
                     font.pixelSize: 24
@@ -221,6 +222,15 @@ ApplicationWindow {
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 4
+
+                        AppInput {
+                            id: user_name
+                            Layout.fillWidth: true
+                            text: accountManager.current_account
+                            readOnly: true
+                            iconSource: "/resources/icons/user-circle.svg"
+
+                        }
 
                         AppInput {
                             id: pwd

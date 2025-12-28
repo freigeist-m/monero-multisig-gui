@@ -131,7 +131,7 @@ Page {
     }
 
     function isValidOnion(a) {
-        return /^[a-z0-9]{56}\.onion$/.test(a.toLowerCase());
+        return accountManager.isOnionAddress(normalizeOnion(a));
     }
 
     function loadAddressBook() {

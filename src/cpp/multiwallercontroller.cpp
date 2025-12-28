@@ -3,7 +3,10 @@
 #include "torbackend.h"
 #include "wallet.h"
 #include "accountmanager.h"
+#include "restore_height.h"
 
+#include <QDateTime>
+#include <QRandomGenerator>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -15,6 +18,23 @@
 #include <QUrl>
 #include <QRegularExpression>
 
+
+static int nettype_to_int(const QString &nettype) {
+    const QString n = nettype.trimmed().toLower();
+    if (n == "mainnet")  return 0;
+    if (n == "testnet")  return 1;
+    return 2; // stagenet
+}
+
+static inline QDir walletDir(const AccountManager *am) {
+    return QDir(am ? am->walletAccountDir() : QString());
+}
+static inline QString walletBase(const AccountManager *am, const QString &name) {
+    return am ? am->walletPath(name) : QString();
+}
+static inline QDir msigDir(const AccountManager *am) {
+    return QDir(am ? am->multisigInfoDir() : QString());
+}
 
 MultiWalletController::MultiWalletController(AccountManager *am, TorBackend *tor, QObject *parent) :
     QObject(parent),
@@ -42,6 +62,7 @@ MultiWalletController::~MultiWalletController()
 
 static QString normOnion(QString s) {
     s = s.trimmed().toLower();
+    if (s.isEmpty()) return {};
     if (!s.endsWith(".onion")) s += ".onion";
     return s;
 }
@@ -200,7 +221,7 @@ QStringList MultiWalletController::peersForRef(const QString &ref, const QString
 QString MultiWalletController::walletNameForRef(const QString &ref, const QString &onion) const
 {
     const QString wantRef = ref.trimmed();
-    const QString wantOn  = onion.trimmed();
+    const QString wantOn  = normOnion(onion);
 
     auto it = m_meta_ref.constFind(refKey(wantRef, wantOn));
     if (it != m_meta_ref.constEnd()) {
@@ -472,8 +493,8 @@ bool MultiWalletController::renameWallet(const QString &oldName, const QString &
     if (m_meta.contains(newName))     return false;
     if (!(m_am && m_am->isAuthenticated())) return false;
 
-    const QString account = m_am->currentAccount();
-    const QDir d(QStringLiteral("wallets/%1").arg(account));
+    const QDir d(m_am->walletAccountDir());
+    if (!d.exists()) return false;
 
     const QStringList variants = { "", ".keys", ".txt" };
     for (const QString &ext : variants) {
@@ -484,8 +505,25 @@ bool MultiWalletController::renameWallet(const QString &oldName, const QString &
         }
     }
 
-    const QString msDir = QStringLiteral("./wallets/%1/multisig_info").arg(account);
-    QFile::rename(msDir + QLatin1Char('/') + oldName,  msDir + QLatin1Char('/') + newName);
+    // multisig_info lives under wallets/<account>/multisig_info/<walletName>
+    const QDir ms(m_am->multisigInfoDir());
+    if (QFileInfo(ms.filePath(newName)).exists()) return false;
+
+    for (const QString &ext : variants) {
+        const QString src = d.filePath(oldName + ext);
+        const QString dst = d.filePath(newName + ext);
+        if (QFileInfo::exists(src)) {
+            if (!QFile::rename(src, dst)) return false;
+        }
+    }
+
+    if (!ms.exists()) QDir().mkpath(ms.absolutePath());
+    const QString msSrc = ms.filePath(oldName);
+    const QString msDst = ms.filePath(newName);
+    if (QFileInfo(msSrc).exists()) {
+        if (!QFile::rename(msSrc, msDst)) return false;
+    }
+
 
     QJsonDocument doc = QJsonDocument::fromJson(m_am->loadAccountData().toUtf8());
     QJsonObject root  = doc.object();
@@ -500,7 +538,8 @@ bool MultiWalletController::renameWallet(const QString &oldName, const QString &
 
     if (m_meta.contains(oldName)) {
         Meta m = m_meta.take(oldName);
-        m.wallet_name = newName; m_meta.insert(newName, m);
+        m.wallet_name = newName;
+        m_meta.insert(newName, m);
     }
     m_walletNames.replace(m_walletNames.indexOf(oldName), newName);
     loadWalletsFromAccount();
@@ -533,9 +572,15 @@ bool MultiWalletController::removeWallet(const QString &walletName)
     m_msigCache.remove(walletName);
     m_lastRefreshTs.remove(walletName);
 
-    const QString account = m_am->currentAccount();
-    QFile::remove(QStringLiteral("./wallets/%1/%2").arg(account, walletName));
-    QFile::remove(QStringLiteral("./wallets/%1/%2.keys").arg(account, walletName));
+    const QString base = m_am->walletPath(walletName);
+    QFile::remove(base);
+    QFile::remove(base + ".keys");
+    QFile::remove(base + ".txt");
+
+    const QString msPath = QDir(m_am->multisigInfoDir()).filePath(walletName);
+    if (QFileInfo(msPath).exists()) {
+        QDir(msPath).removeRecursively();
+    }
 
     loadWalletsFromAccount();
     emit walletsChanged();
@@ -614,7 +659,8 @@ void MultiWalletController::connectWallet(const QString &walletName)
     if (!meta.wallet_name.isNull()) {
         auto *w = new Wallet;
         QString accountName = m_am->currentAccount();
-        QString walletPath = QString("wallets/%1/%2").arg(accountName).arg(walletName);
+        QDir().mkpath(m_am->walletAccountDir());
+        const QString walletPath = m_am->walletPath(walletName);
 
         const auto net = plan_for(m_am, m_tor);
         qDebug() << "Setting daemon address to:" << net.daemonAddr
@@ -713,7 +759,6 @@ bool MultiWalletController::walletExists(const QString &walletName) const
             return true;
     }
 
-
     if (!m_am)
         return false;
 
@@ -721,21 +766,28 @@ bool MultiWalletController::walletExists(const QString &walletName) const
     if (account.isEmpty())
         return false;
 
-    const QDir dir(QStringLiteral("wallets/%1").arg(account));
+    const QDir dir(m_am->walletAccountDir());
     if (!dir.exists())
         return false;
 
     const QString basePath = dir.filePath(trimmed);
+    if (QFile::exists(basePath)) return true;
+    if (QFile::exists(basePath + ".keys")) return true;
+    if (QFile::exists(basePath + ".txt")) return true;
 
+    const QString want0 = trimmed;
+    const QString want1 = trimmed + ".keys";
+    const QString want2 = trimmed + ".txt";
 
-    if (QFile::exists(basePath) || QFile::exists(basePath + ".keys"))
-        return true;
+    const QFileInfoList files = dir.entryInfoList(QDir::Files | QDir::NoSymLinks);
+    for (const QFileInfo &fi : files) {
+        const QString fn = fi.fileName();
+        if (fn.compare(want0, Qt::CaseInsensitive) == 0) return true;
+        if (fn.compare(want1, Qt::CaseInsensitive) == 0) return true;
+        if (fn.compare(want2, Qt::CaseInsensitive) == 0) return true;
+    }
 
-
-    const QStringList matches =
-        dir.entryList({ trimmed + "*" }, QDir::Files | QDir::NoSymLinks);
-
-    return !matches.isEmpty();
+    return false;
 }
 
 void MultiWalletController::createWallet(const QString &walletName,const QString &password , const QString &nettype )
@@ -750,7 +802,7 @@ void MultiWalletController::createWallet(const QString &walletName,const QString
     if (meta.wallet_name.isNull()){
         auto *w = new Wallet;
         QString accountName = m_am->currentAccount();
-        QString walletPath = QString("wallets/%1/%2").arg(accountName).arg(walletName);
+        const QString walletPath = m_am->walletPath(walletName);
 
         const auto net = plan_for(m_am, m_tor);
         qDebug() << "Setting daemon address to:" << net.daemonAddr
@@ -895,7 +947,7 @@ bool MultiWalletController::importWallet(bool          fromFile,
         chosenMyOnion.clear();
     }
 
-    if (multisig && !reference.trimmed().isEmpty() && !chosenMyOnion.isEmpty()) {
+    if (!reference.trimmed().isEmpty()) {
         if (!refOnionAvailable(reference, chosenMyOnion)) {
             qDebug().noquote() << "Reference '" << reference << "' already in use for onion " << chosenMyOnion;
             emit rpcError(QString(), tr("Reference '%1' is already used on %2").arg(reference, chosenMyOnion));
@@ -937,10 +989,8 @@ bool MultiWalletController::importWallet(bool          fromFile,
     }
 
 
-    const QString account   = m_am->currentAccount();
-    QDir().mkpath(QStringLiteral("wallets/%1").arg(account));
-    const QString walletPath = QString("wallets/%1/%2").arg(account, walletName);
-    qDebug().noquote() << walletPath;
+    QDir().mkpath(m_am->walletAccountDir());
+    const QString walletPath = m_am->walletPath(walletName);
 
 
     auto *w = new Wallet;
@@ -954,7 +1004,12 @@ bool MultiWalletController::importWallet(bool          fromFile,
     else               w->clearProxy();
 
     connect(w, &Wallet::errorOccurred, this,
-            [this, walletName](const QString &msg){ emit rpcError(walletName, msg); },
+            [this, walletName](const QString &msg){
+                emit rpcError(walletName, msg);
+                if (m_restoreInPlaceJobs.contains(walletName)) {
+                    // rollbackRestoreInPlace(walletName, msg);
+                }
+            },
             Qt::QueuedConnection);
 
 
@@ -1044,6 +1099,7 @@ bool MultiWalletController::importWallet(bool          fromFile,
                     w->isMultisig();
                     w->startSync(120);
                     w->getBalance();
+                    maybeFinalizeRestoreInPlace(walletName);
                 },
                 Qt::QueuedConnection);
 
@@ -1067,6 +1123,7 @@ bool MultiWalletController::importWallet(bool          fromFile,
                                        m.online,
                                        m.creator,
                                        m.net_type);
+                    maybeFinalizeRestoreInPlace(walletName);
                 }, Qt::QueuedConnection);
 
 
@@ -1093,6 +1150,7 @@ bool MultiWalletController::importWallet(bool          fromFile,
                     }
                     if (isMulti)
                         w->getMultisigParams();
+                    maybeFinalizeRestoreInPlace(walletName);
                 }, Qt::QueuedConnection);
 
 
@@ -1119,6 +1177,7 @@ bool MultiWalletController::importWallet(bool          fromFile,
                                        m.online,
                                        m.creator,
                                        m.net_type);
+                    maybeFinalizeRestoreInPlace(walletName);
                 }, Qt::QueuedConnection);
 
 
@@ -1174,6 +1233,7 @@ bool MultiWalletController::importWallet(bool          fromFile,
                 w->isMultisig();
                 w->startSync(120);
                 w->getBalance();
+                maybeFinalizeRestoreInPlace(walletName);
             },
             Qt::QueuedConnection);
 
@@ -1201,6 +1261,7 @@ bool MultiWalletController::importWallet(bool          fromFile,
                 }
                 if (isMulti)
                     w->getMultisigParams();
+                maybeFinalizeRestoreInPlace(walletName);
             }, Qt::QueuedConnection);
 
 
@@ -1225,6 +1286,9 @@ bool MultiWalletController::importWallet(bool          fromFile,
                                    m.online,
                                    m.creator,
                                    m.net_type);
+
+                maybeFinalizeRestoreInPlace(walletName);
+
             }, Qt::QueuedConnection);
 
     m_wallets.insert(walletName, w);
@@ -1353,3 +1417,406 @@ bool MultiWalletController::addressMatchesCurrentNet(const QString &address) con
     }
     return false;
 }
+
+
+
+QString MultiWalletController::randomSuffix(int len) const
+{
+    static const QString alphabet = QStringLiteral("abcdefghijklmnopqrstuvwxyz0123456789");
+    QString out;
+    out.reserve(len);
+    for (int i = 0; i < len; ++i) {
+        const int idx = int(QRandomGenerator::global()->bounded(alphabet.size()));
+        out.append(alphabet[idx]);
+    }
+    return out;
+}
+
+QString MultiWalletController::makeUniqueBackupName(const QString &base) const
+{
+    const QString ts = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss");
+    QString cand = QStringLiteral("__backup__%1__%2").arg(base, ts);  //
+
+    int n = 2;
+    while (walletExists(cand)) {
+        cand = QStringLiteral("__backup__%1__%2__%3").arg(base, ts).arg(n++);
+    }
+    return cand;
+}
+
+
+bool MultiWalletController::restoreWalletInPlaceUsingImport(const QString &walletName)
+{
+    if (!m_am || !m_am->isAuthenticated()) {
+        emit rpcError(walletName, tr("Not authenticated"));
+        return false;
+    }
+
+    // Guard: must be disconnected
+    if (m_wallets.contains(walletName)) {
+        emit rpcError(walletName, tr("Disconnect wallet before restoring"));
+        return false;
+    }
+
+    if (!m_meta.contains(walletName)) {
+        emit rpcError(walletName, tr("Wallet not found"));
+        return false;
+    }
+
+    if (m_restoreInPlaceJobs.contains(walletName)) {
+        emit rpcError(walletName, tr("Restore already running"));
+        return false;
+    }
+
+    const Meta orig = m_meta.value(walletName);
+    if (orig.seed.trimmed().isEmpty()) {
+        emit rpcError(walletName, tr("No seed stored for this wallet"));
+        return false;
+    }
+
+    if (m_am->networkType() != orig.net_type) {
+        emit rpcError(walletName, tr("Network mismatch"));
+        return false;
+    }
+
+    // 1) Backup by renaming wallet (files + account data)
+    const QString backupName = makeUniqueBackupName(walletName);
+
+    // 2) Avoid ref/onion collision: backup wallet gets a different reference
+    QString backupRef = orig.reference;
+    if (!orig.reference.trimmed().isEmpty()) {
+        for (int i = 0; i < 50; ++i) {
+            const QString cand = QStringLiteral("%1-backup-%2")
+            .arg(orig.reference.trimmed(), randomSuffix(6));
+            if (refOnionAvailable(cand, orig.my_onion)) { // orig.my_onion may be ""
+                backupRef = cand;
+                break;
+            }
+        }
+        if (backupRef == orig.reference) {
+            emit rpcError(walletName, tr("Could not generate backup reference"));
+            return false;
+        }
+    }
+
+    if (!renameWallet(walletName, backupName)) {
+        emit rpcError(walletName, tr("Failed to create backup (rename failed)"));
+        return false;
+    }
+
+    // (void)setWalletArchived(backupName, true);
+
+    if (!orig.reference.trimmed().isEmpty()) {
+        if (!updateWalletReference(backupName, backupRef)) {
+            // revert rename if we can
+            (void)renameWallet(backupName, walletName);
+            emit rpcError(walletName, tr("Failed to update backup reference"));
+            return false;
+        }
+    }
+
+    // Create job
+    RestoreInPlaceJob job;
+    job.originalName = walletName;
+    job.backupName = backupName;
+    job.backupMeta = orig;                // expected values for verification
+    job.originalReference = orig.reference;
+    job.backupReference = backupRef;
+    job.waitingForParams = orig.multisig; // multisig needs multisigParamsReady to verify th/tot
+    m_restoreInPlaceJobs.insert(walletName, job);
+
+    emit restoreInPlaceStarted(walletName, backupName);
+
+    // 3) Restore using your existing importWallet path (seed restore)
+    // IMPORTANT: pass peers + my_onion exactly from meta, no re-derivation here.
+    const bool ok = importWallet(
+        /*fromFile*/ false,
+        /*walletName*/ walletName,
+        /*source*/ QString(),
+        /*password*/ orig.password,
+        /*seedWords*/ orig.seed,
+        /*restoreHeight*/ orig.restore_height,
+        /*multisig*/ orig.multisig,
+        /*reference*/ orig.reference,
+        /*peers*/ orig.peers,
+        /*myOnionArg*/ orig.my_onion,
+        /*nettype*/ orig.net_type
+        );
+
+    if (!ok) {
+        rollbackRestoreInPlace(walletName, tr("Failed to start import/restore"));
+        return false;
+    }
+
+    return true;
+}
+
+void MultiWalletController::maybeFinalizeRestoreInPlace(const QString &walletName)
+{
+    if (!m_restoreInPlaceJobs.contains(walletName)) return;
+
+    auto &job = m_restoreInPlaceJobs[walletName];
+    if (job.completed) return;
+
+    // We verify against the meta that should now reflect the restored wallet state
+    const Meta cur = m_meta.value(walletName);
+
+    // Basic checks: must exist
+    if (cur.wallet_name.isEmpty()) return;
+
+    // Verify stable fields (these should match your previous wallet)
+    const Meta expected = job.backupMeta;
+
+    // Address: only verify if expected had a real one (not empty/pending)
+    if (!expected.address.trimmed().isEmpty() &&
+        expected.address != QStringLiteral("pending") &&
+        cur.address != QStringLiteral("pending") &&
+        cur.address.trimmed() != expected.address.trimmed()) {
+        qDebug().noquote() << "rollbackRestoreInPlace:" << "Address mismatch after restore";
+        // rollbackRestoreInPlace(walletName, tr("Address mismatch after restore"));
+        return;
+    }
+
+    // Multisig flag should match once isMultisigReady has run
+    if (cur.multisig != expected.multisig) {
+        // if it's still in flight, wait a bit (but if it flipped wrong, rollback)
+        // Here we treat mismatch as failure because expected is known.
+        qDebug().noquote() << "rollbackRestoreInPlace:" << "Wallet type mismatch (multisig flag)";
+        // rollbackRestoreInPlace(walletName, tr("Wallet type mismatch (multisig flag)"));
+        return;
+    }
+
+    // If multisig, threshold/total must match; but those arrive after multisigParamsReady
+    if (expected.multisig) {
+        if (cur.threshold <= 0 || cur.total <= 0) return; // not ready yet
+        if (cur.threshold != expected.threshold || cur.total != expected.total) {
+            qDebug().noquote() << "rollbackRestoreInPlace:" << "Multisig params mismatch (threshold/total)";
+            // rollbackRestoreInPlace(walletName, tr("Multisig params mismatch (threshold/total)"));
+            return;
+        }
+    }
+
+    // Optional: verify reference & my_onion (should match original)
+    if (cur.reference.trimmed() != expected.reference.trimmed()) {
+        qDebug().noquote() << "rollbackRestoreInPlace:" << "Reference mismatch after restore";
+        // rollbackRestoreInPlace(walletName, tr("Reference mismatch after restore"));
+        return;
+    }
+    if (cur.my_onion.trimmed().toLower() != expected.my_onion.trimmed().toLower()) {
+        qDebug().noquote() << "rollbackRestoreInPlace:" << "My onion mismatch after restore";
+        // rollbackRestoreInPlace(walletName, tr("My onion mismatch after restore"));
+        return;
+    }
+
+    // If we get here, it matches -> delete backup
+    job.completed = true;
+
+    const QString backupName = job.backupName;
+    // (void)removeWallet(backupName);
+
+    emit restoreInPlaceFinished(walletName, true,
+                                tr("Wallet restored successfully. Backup '%1' deleted.").arg(backupName));
+}
+
+void MultiWalletController::rollbackRestoreInPlace(const QString &originalName, const QString &reason)
+{
+    if (!m_restoreInPlaceJobs.contains(originalName)) return;
+
+    auto job = m_restoreInPlaceJobs.take(originalName);
+
+    // Remove the newly created wallet (if any)
+    disconnectWallet(originalName);
+    (void)removeWallet(originalName);
+
+    // Rename backup back to original
+    if (!renameWallet(job.backupName, originalName)) {
+        emit restoreInPlaceFinished(originalName, false,
+                                    tr("Restore failed: %1. Backup kept as '%2' (rename-back failed).")
+                                        .arg(reason, job.backupName));
+        return;
+    }
+
+    // restore original reference (we modified backup ref)
+    if (job.backupMeta.multisig && !job.originalReference.trimmed().isEmpty()) {
+        (void)updateWalletReference(originalName, job.originalReference);
+    }
+
+    // (void)setWalletArchived(originalName, job.backupMeta.archived);
+
+    emit restoreInPlaceFinished(originalName, false,
+                                tr("Restore failed: %1. Original wallet restored from backup.").arg(reason));
+}
+
+bool MultiWalletController::createStandardWallet(const QString &walletName,
+                                                 const QString &password,
+                                                 const QString &nettype)
+{
+    const QString name = walletName.trimmed();
+
+    if (!m_am || !m_am->isAuthenticated()) {
+        emit rpcError(QString(), tr("Not authenticated"));
+        return false;
+    }
+
+    if (m_am->networkType() != nettype) {
+        emit rpcError(name, tr("Network mismatch"));
+        return false;
+    }
+
+    if (name.isEmpty()) {
+        emit rpcError(QString(), tr("Wallet name is empty"));
+        return false;
+    }
+
+    if (walletExists(name)) {
+        emit rpcError(name, tr("Wallet '%1' already exists").arg(name));
+        return false;
+    }
+
+    if (m_wallets.contains(name)) {
+        emit rpcError(name, tr("Wallet is already open"));
+        return false;
+    }
+
+    if (m_stdCreateJobs.contains(name)) {
+        emit rpcError(name, tr("Wallet creation already running"));
+        return false;
+    }
+
+    // Create job
+    StandardCreateJob job;
+    job.password = password;
+    job.nettype  = nettype;
+
+    job.reference = randomSuffix(20);
+
+    for (int i = 0; i < 20; ++i) {
+        bool collision = false;
+        for (auto it = m_meta.constBegin(); it != m_meta.constEnd(); ++it) {
+            const auto &m = it.value();
+            if (!m.multisig && m.my_onion.trimmed().isEmpty() &&
+                m.reference.compare(job.reference, Qt::CaseInsensitive) == 0) {
+                collision = true;
+                break;
+            }
+        }
+        if (!collision) break;
+        job.reference = randomSuffix(20);
+    }
+
+    const std::time_t now = QDateTime::currentSecsSinceEpoch();
+    job.restoreHeight = restore_height::estimate_from_timestamp(now, nettype_to_int(nettype));
+    m_stdCreateJobs.insert(name, job);
+
+    // Wallet path
+    const QString walletPath = m_am->walletPath(name);
+
+    // Create wallet instance
+    auto *w = new Wallet;
+
+    const auto net = plan_for(m_am, m_tor);
+    w->setDaemonAddress(net.daemonAddr);
+    if (net.useProxy)  w->setSocksProxy(net.proxyHost, net.proxyPort);
+    else               w->clearProxy();
+
+    connect(w, &Wallet::errorOccurred, this,
+            [this, name, w](const QString &msg) {
+                emit rpcError(name, msg);
+                m_stdCreateJobs.remove(name);
+
+                // cleanup instance if we inserted it
+                if (m_wallets.value(name) == w) {
+                    disconnectWallet(name);
+                } else {
+                    w->deleteLater();
+                }
+            },
+            Qt::QueuedConnection);
+
+    connect(w, &Wallet::walletCreated, this,
+            [this, name, w]() {
+                // Request both; we finalize when both arrive
+                w->getPrimarySeed();
+                w->getAddress();
+
+                // Optional: start sync immediately
+                w->startSync(120);
+            },
+            Qt::QueuedConnection);
+
+    connect(w, &Wallet::primarySeedReady, this,
+            [this, name](const QString &seed) {
+                if (!m_stdCreateJobs.contains(name) || seed.isEmpty()) return;
+                auto &job = m_stdCreateJobs[name];
+                job.seed = seed;
+                job.gotSeed = true;
+                maybeFinalizeStandardCreate(name);
+            },
+            Qt::QueuedConnection);
+
+    connect(w, &Wallet::addressReady, this,
+            [this, name](const QString &addr) {
+                if (!m_stdCreateJobs.contains(name) || addr.isEmpty()) return;
+                auto &job = m_stdCreateJobs[name];
+                job.address = addr;
+                job.gotAddr = true;
+                maybeFinalizeStandardCreate(name);
+            },
+            Qt::QueuedConnection);
+
+    // Hook typical signals like you do in connectWallet/createWallet (busy/rpc/etc)
+    connect(w, &Wallet::busyChanged, this, [this, name]() {
+        emit busyChanged(name, walletBusy(name));
+    }, Qt::QueuedConnection);
+
+    connect(w, &Wallet::queueChanged, this, [this, name] {
+        emit pendingOpsChanged(name);
+    }, Qt::QueuedConnection);
+
+    connect(w, &Wallet::balanceReady, this, [this, name](quint64 bal, quint64 unlk, bool){
+        emit walletBalanceChanged(name, bal, unlk);
+    }, Qt::QueuedConnection);
+
+    // Insert into map so UI can see it immediately
+    m_wallets.insert(name, w);
+    emit walletsChanged();
+    bumpEpoch();
+
+    // Create new standard wallet
+    w->createNew(walletPath, password, "English", nettype, 1);
+    return true;
+}
+
+void MultiWalletController::maybeFinalizeStandardCreate(const QString &walletName)
+{
+    if (!m_stdCreateJobs.contains(walletName)) return;
+    auto &job = m_stdCreateJobs[walletName];
+    if (job.done) return;
+    if (!job.gotSeed || !job.gotAddr) return;
+
+    job.done = true;
+
+    addWalletToAccount(walletName,
+                       job.password,
+                       job.seed,
+                       job.address,
+                       job.restoreHeight,
+                       /*myOnion*/ "",
+                       /*reference*/ job.reference,
+                       /*multisig*/ false,
+                       /*threshold*/ 0,
+                       /*total*/ 0,
+                       /*peers*/ QStringList{},
+                       /*online*/ true,
+                       /*creator*/ "user",
+                       job.nettype);
+
+    emit standardWalletCreated(walletName);
+
+    // Optional: if you prefer not to keep it connected right now:
+    // disconnectWallet(walletName);
+
+    m_stdCreateJobs.remove(walletName);
+}
+
+
