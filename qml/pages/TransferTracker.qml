@@ -175,7 +175,7 @@ Page {
                             received: !!p[1],
                             signed: !!p[2],
                             status: p[3] || "",
-                            isOwn: isSelfPeer(on, myOnion),
+                            isOwn: isSelfPeer(on, myOnionForSession),
                             orderPos: i + 1
                         })
                     } else {

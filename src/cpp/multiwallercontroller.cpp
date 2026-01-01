@@ -81,11 +81,20 @@ struct NetworkPlan {
 
 NetworkPlan plan_for(AccountManager *am, TorBackend *tor) {
     NetworkPlan p;
-    const QString host = am->daemonUrl();
-    const int     port = am->daemonPort();
-    p.daemonAddr = QString("http://%1:%2").arg(host).arg(port);
 
-    const bool onion  = is_onion_host(host);
+    const QString input = am->daemonUrl().trimmed();
+    QUrl u = QUrl::fromUserInput(input);
+
+    QString scheme = u.scheme().isEmpty() ? QStringLiteral("http") : u.scheme();
+
+    QString realHost = u.host().isEmpty() ? input : u.host();
+
+    int realPort = am->daemonPort();
+
+    p.daemonAddr = QStringLiteral("%1://%2:%3").arg(scheme, realHost).arg(realPort);
+
+
+    const bool onion  = is_onion_host(realHost);
     const bool wantTor= am->useTorForDaemon() || onion;
 
     if (wantTor && tor && tor->isRunning() && tor->socksPort() > 0) {
