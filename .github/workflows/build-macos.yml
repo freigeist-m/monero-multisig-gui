@@ -19,7 +19,10 @@ jobs:
     
     - name: Install dependencies
       run: |
-        brew install qt@6 libsodium cmake pkg-config boost openssl unbound libusb
+        # Install Monero dependencies using their Brewfile
+        brew bundle --file=monero/contrib/brew/Brewfile
+        # Install Qt
+        brew install qt@6
         echo 'export PATH="/opt/homebrew/opt/qt@6/bin:$PATH"' >> $GITHUB_ENV
     
     - name: Configure CMake
