@@ -1,0 +1,58 @@
+name: Build macOS App
+
+on:
+  push:
+    branches: [ main, master ]  # adjust to your main branch name
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # allows manual trigger
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive  # important for the monero submodule
+    
+    - name: Install dependencies
+      run: |
+        brew install qt@6 libsodium cmake pkg-config
+        echo 'export PATH="/opt/homebrew/opt/qt@6/bin:$PATH"' >> $GITHUB_ENV
+    
+    - name: Configure CMake
+      run: |
+        mkdir build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release \
+                 -DCMAKE_PREFIX_PATH=/opt/homebrew/opt/qt@6
+    
+    - name: Build
+      run: |
+        cd build
+        cmake --build . --config Release -j$(sysctl -n hw.ncpu)
+    
+    - name: Bundle Qt dependencies
+      run: |
+        cd build
+        /opt/homebrew/opt/qt@6/bin/macdeployqt appmonero-multisig-gui.app -qmldir=../qml
+    
+    - name: Create DMG (optional)
+      run: |
+        cd build
+        # Simple DMG creation
+        hdiutil create -volname "Monero Multisig" -srcfolder appmonero-multisig-gui.app -ov -format UDZO monero-multisig-gui.dmg
+    
+    - name: Upload .app bundle
+      uses: actions/upload-artifact@v3
+      with:
+        name: monero-multisig-gui-macos
+        path: build/appmonero-multisig-gui.app
+    
+    - name: Upload DMG
+      uses: actions/upload-artifact@v3
+      with:
+        name: monero-multisig-gui-dmg
+        path: build/monero-multisig-gui.dmg
