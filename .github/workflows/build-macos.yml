@@ -19,8 +19,8 @@ jobs:
     
     - name: Install dependencies
       run: |
-        # Install Monero dependencies using their Brewfile
-        brew bundle --file=monero/contrib/brew/Brewfile
+        # Install Monero dependencies
+        brew install autoconf autogen automake binutils coreutils cmake pkg-config boost openssl hidapi zmq libpgm unbound libsodium miniupnpc readline expat ccache doxygen graphviz libunwind-headers xz protobuf libusb
         # Install Qt
         brew install qt@6
         echo 'export PATH="/opt/homebrew/opt/qt@6/bin:$PATH"' >> $GITHUB_ENV
