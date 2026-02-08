@@ -27,6 +27,7 @@ jobs:
     
     - name: Configure CMake
       run: |
+        export PKG_CONFIG_PATH="/opt/homebrew/opt/libsodium/lib/pkgconfig:$PKG_CONFIG_PATH"
         mkdir build
         cd build
         cmake .. -DCMAKE_BUILD_TYPE=Release \
