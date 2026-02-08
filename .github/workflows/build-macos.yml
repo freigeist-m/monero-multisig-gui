@@ -27,14 +27,20 @@ jobs:
     
     - name: Configure CMake
       run: |
-        export PKG_CONFIG_PATH="/opt/homebrew/opt/libsodium/lib/pkgconfig:$PKG_CONFIG_PATH"
+        export PKG_CONFIG_PATH="/opt/homebrew/opt/libsodium/lib/pkgconfig:/opt/homebrew/opt/openssl@3/lib/pkgconfig:$PKG_CONFIG_PATH"
+        export LDFLAGS="-L/opt/homebrew/opt/libsodium/lib -L/opt/homebrew/lib"
+        export CPPFLAGS="-I/opt/homebrew/opt/libsodium/include -I/opt/homebrew/include"
         mkdir build
         cd build
         cmake .. -DCMAKE_BUILD_TYPE=Release \
-                 -DCMAKE_PREFIX_PATH=/opt/homebrew/opt/qt@6
+                 -DCMAKE_PREFIX_PATH=/opt/homebrew/opt/qt@6 \
+                 -DCMAKE_LIBRARY_PATH=/opt/homebrew/lib \
+                 -DCMAKE_INCLUDE_PATH=/opt/homebrew/include
     
     - name: Build
       run: |
+        export LDFLAGS="-L/opt/homebrew/opt/libsodium/lib -L/opt/homebrew/lib"
+        export CPPFLAGS="-I/opt/homebrew/opt/libsodium/include -I/opt/homebrew/include"
         cd build
         cmake --build . --config Release -j$(sysctl -n hw.ncpu)
     
