@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-macos-intel:
-    runs-on: macos-12-large   # Intel runner
+    runs-on: macos-12   # Intel runner
     
     steps:
     - name: Checkout code
