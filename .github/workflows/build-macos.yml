@@ -2,26 +2,81 @@ name: Build macOS App
 
 on:
   push:
-    branches: [ main, master ]  # adjust to your main branch name
+    branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch:  # allows manual trigger
+  workflow_dispatch:
 
 jobs:
-  build-macos:
-    runs-on: macos-latest
+  build-macos-intel:
+    runs-on: macos-13  # Intel runner
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        submodules: recursive  # important for the monero submodule
+        submodules: recursive
     
     - name: Install dependencies
       run: |
-        # Install Monero dependencies
         brew install autoconf autogen automake binutils coreutils cmake pkg-config boost openssl hidapi zmq libpgm unbound libsodium miniupnpc readline expat ccache doxygen graphviz libunwind-headers xz protobuf libusb
-        # Install Qt
+        brew install qt@6
+        echo 'export PATH="/usr/local/opt/qt@6/bin:$PATH"' >> $GITHUB_ENV
+    
+    - name: Configure CMake
+      run: |
+        export PKG_CONFIG_PATH="/usr/local/opt/libsodium/lib/pkgconfig:/usr/local/opt/openssl@3/lib/pkgconfig:$PKG_CONFIG_PATH"
+        export LDFLAGS="-L/usr/local/opt/libsodium/lib -L/usr/local/lib"
+        export CPPFLAGS="-I/usr/local/opt/libsodium/include -I/usr/local/include"
+        mkdir build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release \
+                 -DCMAKE_PREFIX_PATH=/usr/local/opt/qt@6 \
+                 -DCMAKE_LIBRARY_PATH=/usr/local/lib \
+                 -DCMAKE_INCLUDE_PATH=/usr/local/include \
+                 -DCMAKE_OSX_ARCHITECTURES=x86_64
+    
+    - name: Build
+      run: |
+        export LDFLAGS="-L/usr/local/opt/libsodium/lib -L/usr/local/lib"
+        export CPPFLAGS="-I/usr/local/opt/libsodium/include -I/usr/local/include"
+        cd build
+        cmake --build . --config Release -j$(sysctl -n hw.ncpu)
+    
+    - name: Bundle Qt dependencies
+      run: |
+        cd build
+        /usr/local/opt/qt@6/bin/macdeployqt appmonero-multisig-gui.app -qmldir=../qml
+    
+    - name: Create DMG
+      run: |
+        cd build
+        hdiutil create -volname "Monero Multisig" -srcfolder appmonero-multisig-gui.app -ov -format UDZO monero-multisig-gui-intel.dmg
+    
+    - name: Upload .app bundle (Intel)
+      uses: actions/upload-artifact@v4
+      with:
+        name: monero-multisig-gui-macos-intel
+        path: build/appmonero-multisig-gui.app
+    
+    - name: Upload DMG (Intel)
+      uses: actions/upload-artifact@v4
+      with:
+        name: monero-multisig-gui-dmg-intel
+        path: build/monero-multisig-gui-intel.dmg
+
+  build-macos-arm:
+    runs-on: macos-latest  # ARM runner (Apple Silicon)
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Install dependencies
+      run: |
+        brew install autoconf autogen automake binutils coreutils cmake pkg-config boost openssl hidapi zmq libpgm unbound libsodium miniupnpc readline expat ccache doxygen graphviz libunwind-headers xz protobuf libusb
         brew install qt@6
         echo 'export PATH="/opt/homebrew/opt/qt@6/bin:$PATH"' >> $GITHUB_ENV
     
@@ -36,7 +91,7 @@ jobs:
                  -DCMAKE_PREFIX_PATH=/opt/homebrew/opt/qt@6 \
                  -DCMAKE_LIBRARY_PATH=/opt/homebrew/lib \
                  -DCMAKE_INCLUDE_PATH=/opt/homebrew/include \
-                 -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+                 -DCMAKE_OSX_ARCHITECTURES=arm64
     
     - name: Build
       run: |
@@ -50,20 +105,19 @@ jobs:
         cd build
         /opt/homebrew/opt/qt@6/bin/macdeployqt appmonero-multisig-gui.app -qmldir=../qml
     
-    - name: Create DMG (optional)
+    - name: Create DMG
       run: |
         cd build
-        # Simple DMG creation
-        hdiutil create -volname "Monero Multisig" -srcfolder appmonero-multisig-gui.app -ov -format UDZO monero-multisig-gui.dmg
+        hdiutil create -volname "Monero Multisig" -srcfolder appmonero-multisig-gui.app -ov -format UDZO monero-multisig-gui-arm.dmg
     
-    - name: Upload .app bundle
+    - name: Upload .app bundle (ARM)
       uses: actions/upload-artifact@v4
       with:
-        name: monero-multisig-gui-macos
+        name: monero-multisig-gui-macos-arm
         path: build/appmonero-multisig-gui.app
     
-    - name: Upload DMG
+    - name: Upload DMG (ARM)
       uses: actions/upload-artifact@v4
       with:
-        name: monero-multisig-gui-dmg
-        path: build/monero-multisig-gui.dmg
+        name: monero-multisig-gui-dmg-arm
+        path: build/monero-multisig-gui-arm.dmg
