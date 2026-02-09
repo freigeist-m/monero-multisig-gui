@@ -35,7 +35,8 @@ jobs:
         cmake .. -DCMAKE_BUILD_TYPE=Release \
                  -DCMAKE_PREFIX_PATH=/opt/homebrew/opt/qt@6 \
                  -DCMAKE_LIBRARY_PATH=/opt/homebrew/lib \
-                 -DCMAKE_INCLUDE_PATH=/opt/homebrew/include
+                 -DCMAKE_INCLUDE_PATH=/opt/homebrew/include \
+                 -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
     
     - name: Build
       run: |
