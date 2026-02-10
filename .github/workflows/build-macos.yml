@@ -9,56 +9,112 @@ on:
 
 jobs:
   build-macos-intel:
-    runs-on: macos-13   # Intel runner
-    
+    runs-on: macos-latest  # Apple Silicon runner, cross-compiling for Intel
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
         submodules: recursive
-    
-    - name: Install dependencies
+
+    - name: Install x86_64 Homebrew and dependencies
       run: |
-        brew install autoconf autogen automake binutils coreutils cmake pkg-config boost openssl hidapi zmq libpgm unbound libsodium miniupnpc readline expat ccache doxygen graphviz libunwind-headers xz protobuf libusb
-        brew install qt@6
-        echo 'export PATH="/usr/local/opt/qt@6/bin:$PATH"' >> $GITHUB_ENV
-    
+        # Install x86_64 Homebrew alongside the ARM one
+        arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+        # Install all dependencies under x86_64 Homebrew
+        arch -x86_64 /usr/local/bin/brew install \
+          autoconf autogen automake binutils coreutils cmake pkg-config \
+          boost openssl hidapi zmq libpgm unbound libsodium miniupnpc \
+          readline expat ccache doxygen graphviz xz protobuf libusb
+        arch -x86_64 /usr/local/bin/brew install qt@6
+
+    - name: Patch build system for x86_64 cross-compilation
+      run: |
+        # The Monero CMakeLists.txt detects ARM based on CMAKE_SYSTEM_PROCESSOR
+        # (the host CPU). When cross-compiling for x86_64 on an ARM host, we
+        # must override this so ARM64 assembly files are not compiled.
+
+        # Strategy: Insert an override block right after cmake_minimum_required
+        # in Monero's CMakeLists.txt that forces ARM=OFF when targeting x86_64.
+        # This must happen BEFORE any architecture detection runs.
+
+        MONERO_CMAKE="monero/CMakeLists.txt"
+        if [ -f "$MONERO_CMAKE" ]; then
+          # Insert the cross-compilation override early in the file
+          sed -i '' '1,/^project(/s/^project(/# === Cross-compilation override for x86_64 on ARM host ===\
+        if(CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")\
+          set(CMAKE_SYSTEM_PROCESSOR "x86_64")\
+        endif()\
+        # === End override ===\
+        \
+        project(/' "$MONERO_CMAKE"
+          echo "Patched $MONERO_CMAKE to override CMAKE_SYSTEM_PROCESSOR for cross-compilation"
+        fi
+
+        # Also ensure RandomX itself doesn't independently detect ARM.
+        # Some versions check CMAKE_SYSTEM_PROCESSOR directly.
+        RANDOMX_CMAKE="monero/external/randomx/CMakeLists.txt"
+        if [ -f "$RANDOMX_CMAKE" ]; then
+          sed -i '' '1s/^/# Cross-compilation override\
+        if(CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")\
+          set(CMAKE_SYSTEM_PROCESSOR "x86_64")\
+        endif()\
+        \
+        /' "$RANDOMX_CMAKE"
+          echo "Patched $RANDOMX_CMAKE for cross-compilation"
+        fi
+
+        # Debug: show what architecture detection looks like
+        echo "--- Verifying patches ---"
+        head -20 "$MONERO_CMAKE"
+        echo "---"
+        head -10 "$RANDOMX_CMAKE"
+
     - name: Configure CMake
       run: |
         export PKG_CONFIG_PATH="/usr/local/opt/libsodium/lib/pkgconfig:/usr/local/opt/openssl@3/lib/pkgconfig:$PKG_CONFIG_PATH"
         export LDFLAGS="-L/usr/local/opt/libsodium/lib -L/usr/local/lib"
         export CPPFLAGS="-I/usr/local/opt/libsodium/include -I/usr/local/include"
-        mkdir build
-        cd build
+        mkdir build && cd build
         cmake .. -DCMAKE_BUILD_TYPE=Release \
                  -DCMAKE_PREFIX_PATH=/usr/local/opt/qt@6 \
                  -DCMAKE_LIBRARY_PATH=/usr/local/lib \
                  -DCMAKE_INCLUDE_PATH=/usr/local/include \
-                 -DCMAKE_OSX_ARCHITECTURES=x86_64
-    
+                 -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+                 -DARCH=x86-64 \
+                 -DCMAKE_C_COMPILER_TARGET=x86_64-apple-darwin \
+                 -DCMAKE_CXX_COMPILER_TARGET=x86_64-apple-darwin \
+                 -DCMAKE_C_FLAGS="-arch x86_64" \
+                 -DCMAKE_CXX_FLAGS="-arch x86_64" \
+                 -DCMAKE_ASM_FLAGS="-arch x86_64"
+
     - name: Build
       run: |
         export LDFLAGS="-L/usr/local/opt/libsodium/lib -L/usr/local/lib"
         export CPPFLAGS="-I/usr/local/opt/libsodium/include -I/usr/local/include"
         cd build
         cmake --build . --config Release -j$(sysctl -n hw.ncpu)
-    
+
     - name: Bundle Qt dependencies
       run: |
         cd build
         /usr/local/opt/qt@6/bin/macdeployqt appmonero-multisig-gui.app -qmldir=../qml
-    
+
     - name: Create DMG
       run: |
         cd build
-        hdiutil create -volname "Monero Multisig" -srcfolder appmonero-multisig-gui.app -ov -format UDZO monero-multisig-gui-intel.dmg
-    
+        hdiutil create -volname "Monero Multisig" \
+          -srcfolder appmonero-multisig-gui.app \
+          -ov -format UDZO \
+          monero-multisig-gui-intel.dmg
+
     - name: Upload .app bundle (Intel)
       uses: actions/upload-artifact@v4
       with:
         name: monero-multisig-gui-macos-intel
         path: build/appmonero-multisig-gui.app
-    
+
     - name: Upload DMG (Intel)
       uses: actions/upload-artifact@v4
       with:
@@ -66,56 +122,60 @@ jobs:
         path: build/monero-multisig-gui-intel.dmg
 
   build-macos-arm:
-    runs-on: macos-latest  # ARM runner (Apple Silicon)
-    
+    runs-on: macos-latest  # Apple Silicon runner (native)
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
         submodules: recursive
-    
+
     - name: Install dependencies
       run: |
-        brew install autoconf autogen automake binutils coreutils cmake pkg-config boost openssl hidapi zmq libpgm unbound libsodium miniupnpc readline expat ccache doxygen graphviz libunwind-headers xz protobuf libusb
+        brew install autoconf autogen automake binutils coreutils cmake pkg-config \
+          boost openssl hidapi zmq libpgm unbound libsodium miniupnpc \
+          readline expat ccache doxygen graphviz xz protobuf libusb
         brew install qt@6
         echo 'export PATH="/opt/homebrew/opt/qt@6/bin:$PATH"' >> $GITHUB_ENV
-    
+
     - name: Configure CMake
       run: |
         export PKG_CONFIG_PATH="/opt/homebrew/opt/libsodium/lib/pkgconfig:/opt/homebrew/opt/openssl@3/lib/pkgconfig:$PKG_CONFIG_PATH"
         export LDFLAGS="-L/opt/homebrew/opt/libsodium/lib -L/opt/homebrew/lib"
         export CPPFLAGS="-I/opt/homebrew/opt/libsodium/include -I/opt/homebrew/include"
-        mkdir build
-        cd build
+        mkdir build && cd build
         cmake .. -DCMAKE_BUILD_TYPE=Release \
                  -DCMAKE_PREFIX_PATH=/opt/homebrew/opt/qt@6 \
                  -DCMAKE_LIBRARY_PATH=/opt/homebrew/lib \
                  -DCMAKE_INCLUDE_PATH=/opt/homebrew/include \
                  -DCMAKE_OSX_ARCHITECTURES=arm64
-    
+
     - name: Build
       run: |
         export LDFLAGS="-L/opt/homebrew/opt/libsodium/lib -L/opt/homebrew/lib"
         export CPPFLAGS="-I/opt/homebrew/opt/libsodium/include -I/opt/homebrew/include"
         cd build
         cmake --build . --config Release -j$(sysctl -n hw.ncpu)
-    
+
     - name: Bundle Qt dependencies
       run: |
         cd build
         /opt/homebrew/opt/qt@6/bin/macdeployqt appmonero-multisig-gui.app -qmldir=../qml
-    
+
     - name: Create DMG
       run: |
         cd build
-        hdiutil create -volname "Monero Multisig" -srcfolder appmonero-multisig-gui.app -ov -format UDZO monero-multisig-gui-arm.dmg
-    
+        hdiutil create -volname "Monero Multisig" \
+          -srcfolder appmonero-multisig-gui.app \
+          -ov -format UDZO \
+          monero-multisig-gui-arm.dmg
+
     - name: Upload .app bundle (ARM)
       uses: actions/upload-artifact@v4
       with:
         name: monero-multisig-gui-macos-arm
         path: build/appmonero-multisig-gui.app
-    
+
     - name: Upload DMG (ARM)
       uses: actions/upload-artifact@v4
       with:
